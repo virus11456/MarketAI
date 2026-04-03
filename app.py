@@ -165,22 +165,22 @@ def generate_docx(result: dict, template_type: str) -> str:
 
 @app.route("/")
 def home():
-    return render_template("home.html")
+    return render_template("home.html", active_page="dashboard")
 
 
 @app.route("/meeting")
 def meeting():
-    return render_template("index.html")
+    return render_template("index.html", active_page="meeting")
 
 
 @app.route("/ad-report")
 def ad_report():
-    return render_template("ad_report.html")
+    return render_template("ad_report.html", active_page="ad_report")
 
 
 @app.route("/work-dispatch")
 def work_dispatch():
-    return render_template("work_dispatch.html")
+    return render_template("work_dispatch.html", active_page="work_dispatch")
 
 
 @app.route("/api/upload", methods=["POST"])

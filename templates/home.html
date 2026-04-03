@@ -1,89 +1,93 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MarketAI</title>
-  <link rel="stylesheet" href="/static/css/style.css">
-  <style>
-    .feature-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 24px;
-      margin-top: 40px;
-    }
-    .feature-card {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 36px 28px;
-      text-align: center;
-      transition: all 0.3s;
-      text-decoration: none;
-      color: var(--text);
-      display: block;
-    }
-    .feature-card:hover {
-      border-color: var(--primary);
-      box-shadow: 0 8px 30px rgba(37, 99, 235, 0.12);
-      transform: translateY(-4px);
-    }
-    .feature-card .icon { font-size: 3rem; margin-bottom: 16px; }
-    .feature-card h2 { font-size: 1.3rem; margin-bottom: 8px; display: block; }
-    .feature-card p { color: var(--text-muted); font-size: 0.95rem; line-height: 1.6; }
-    .feature-card .tag {
-      display: inline-block;
-      margin-top: 16px;
-      padding: 4px 12px;
-      background: #eff6ff;
-      color: var(--primary);
-      border-radius: 999px;
-      font-size: 0.8rem;
-      font-weight: 600;
-    }
-    .home-header { text-align: center; margin-top: 48px; }
-    .home-header h1 { font-size: 2.2rem; }
-    .home-header p { color: var(--text-muted); margin-top: 8px; font-size: 1.05rem; }
-  </style>
-</head>
-<body>
+{% extends "base.html" %}
+{% block title %}MarketAI - 儀表板{% endblock %}
+{% block page_title %}儀表板{% endblock %}
 
-<header>
-  <div class="container">
-    <h1>MarketAI</h1>
-    <p>AI 驅動的行銷自動化工具</p>
+{% block content %}
+<!-- Stats -->
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-icon purple">📝</div>
+    <div class="stat-info">
+      <h3>3</h3>
+      <p>可用工具</p>
+    </div>
   </div>
-</header>
-
-<main class="container">
-  <div class="home-header">
-    <h1>選擇工具</h1>
-    <p>使用 AI 自動產出專業行銷文件</p>
+  <div class="stat-card">
+    <div class="stat-icon green">🤖</div>
+    <div class="stat-info">
+      <h3>Claude AI</h3>
+      <p>驅動引擎</p>
+    </div>
   </div>
+  <div class="stat-card">
+    <div class="stat-icon blue">📄</div>
+    <div class="stat-info">
+      <h3>DOCX</h3>
+      <p>一鍵匯出</p>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon orange">🎙️</div>
+    <div class="stat-info">
+      <h3>Whisper</h3>
+      <p>語音辨識</p>
+    </div>
+  </div>
+</div>
 
+<!-- Quick Access -->
+<div class="card">
+  <div class="card-header">
+    <h2>工具總覽</h2>
+  </div>
   <div class="feature-grid">
     <a href="/meeting" class="feature-card">
-      <div class="icon">📝</div>
-      <h2>會議記錄自動化</h2>
-      <p>上傳會議錄音或文字檔，自動整理成研究報告、提案書、報價單</p>
-      <span class="tag">錄音 / 文字 → 文件</span>
+      <div class="feature-icon purple">📝</div>
+      <div class="feature-body">
+        <h3>會議記錄自動化</h3>
+        <p>上傳會議錄音或文字檔，自動整理成研究報告、提案書、報價單</p>
+        <span class="feature-tag purple">錄音 / 文字 → 文件</span>
+      </div>
     </a>
 
     <a href="/ad-report" class="feature-card">
-      <div class="icon">📊</div>
-      <h2>廣告月報產生器</h2>
-      <p>輸入 Google / Meta / LINE / TikTok 後台數據，自動產出完整月報</p>
-      <span class="tag">廣告數據 → 月報</span>
+      <div class="feature-icon blue">📊</div>
+      <div class="feature-body">
+        <h3>廣告月報產生器</h3>
+        <p>輸入 Google / Meta / LINE / TikTok 後台數據，自動產出完整月報</p>
+        <span class="feature-tag blue">廣告數據 → 月報</span>
+      </div>
     </a>
 
     <a href="/work-dispatch" class="feature-card">
-      <div class="icon">📦</div>
-      <h2>工作包拆分派發</h2>
-      <p>輸入報價單，AI 自動拆分工作包並分派給財務、美術、企劃、工程師等角色</p>
-      <span class="tag">報價單 → 工作分派</span>
+      <div class="feature-icon emerald">📦</div>
+      <div class="feature-body">
+        <h3>工作包拆分派發</h3>
+        <p>輸入報價單，AI 自動拆分工作包並分派給財務、美術、企劃、工程師等角色</p>
+        <span class="feature-tag emerald">報價單 → 工作分派</span>
+      </div>
     </a>
   </div>
-</main>
+</div>
 
-</body>
-</html>
+<!-- Quick Start Guide -->
+<div class="card">
+  <div class="card-header">
+    <h2>快速上手</h2>
+  </div>
+  <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:20px;">
+    <div style="padding:16px; background:var(--bg); border-radius:var(--radius-sm);">
+      <div style="font-size:1.2rem; margin-bottom:8px;">1️⃣ 選擇工具</div>
+      <p style="font-size:0.88rem; color:var(--text-muted);">從上方工具列表或左側選單進入對應功能</p>
+    </div>
+    <div style="padding:16px; background:var(--bg); border-radius:var(--radius-sm);">
+      <div style="font-size:1.2rem; margin-bottom:8px;">2️⃣ 輸入資料</div>
+      <p style="font-size:0.88rem; color:var(--text-muted);">上傳檔案或直接貼上文字內容，支援多種格式</p>
+    </div>
+    <div style="padding:16px; background:var(--bg); border-radius:var(--radius-sm);">
+      <div style="font-size:1.2rem; margin-bottom:8px;">3️⃣ AI 自動產出</div>
+      <p style="font-size:0.88rem; color:var(--text-muted);">Claude AI 分析處理後產出專業文件，可線上預覽或匯出 DOCX</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,145 +1,104 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MarketAI - 會議記錄自動化</title>
-  <link rel="stylesheet" href="/static/css/style.css">
-</head>
-<body>
+{% extends "base.html" %}
+{% block title %}MarketAI - 會議記錄自動化{% endblock %}
+{% block page_title %}會議記錄自動化{% endblock %}
 
-<header>
-  <div class="container" style="display:flex; align-items:center; gap:16px;">
-    <a href="/" style="color:white; text-decoration:none; font-size:1.5rem;">←</a>
-    <div>
-      <h1>會議記錄自動化</h1>
-      <p>會議記錄 → 研究報告 / 提案書 / 報價單　全自動產出</p>
-    </div>
-  </div>
-</header>
+{% block content %}
+<!-- Steps -->
+<div class="steps">
+  <div class="step active" id="step1"><span class="step-num">1</span> 上傳會議記錄</div>
+  <div class="step" id="step2"><span class="step-num">2</span> 選擇產出文件</div>
+  <div class="step" id="step3"><span class="step-num">3</span> AI 分析處理</div>
+  <div class="step" id="step4"><span class="step-num">4</span> 檢視與匯出</div>
+</div>
 
-<main class="container">
-  <!-- Progress Steps -->
-  <div class="steps">
-    <div class="step active" id="step1">
-      <span class="step-num">1</span> 上傳會議記錄
-    </div>
-    <div class="step" id="step2">
-      <span class="step-num">2</span> 選擇產出文件
-    </div>
-    <div class="step" id="step3">
-      <span class="step-num">3</span> AI 分析處理
-    </div>
-    <div class="step" id="step4">
-      <span class="step-num">4</span> 檢視與匯出
-    </div>
-  </div>
+<!-- Section 1: Upload -->
+<div class="section active" id="section-upload">
+  <div class="card">
+    <div class="card-header"><h2>輸入會議記錄</h2></div>
 
-  <!-- Section 1: Upload -->
-  <div class="section active" id="section-upload">
-    <div class="card">
-      <h2>📄 輸入會議記錄</h2>
+    <div class="input-toggle">
+      <button class="active" onclick="toggleInput('file')">上傳檔案</button>
+      <button onclick="toggleInput('text')">直接輸入</button>
+    </div>
 
-      <div class="input-toggle">
-        <button class="active" onclick="toggleInput('file')">上傳檔案</button>
-        <button onclick="toggleInput('text')">直接輸入</button>
+    <div id="input-file">
+      <div class="upload-zone" id="upload-zone">
+        <input type="file" id="file-input" accept=".txt,.md,.doc,.docx,.pdf,.mp3,.wav,.m4a,.ogg,.webm,.mp4">
+        <div class="upload-icon">📁</div>
+        <p><strong>點擊或拖曳檔案到這裡</strong></p>
+        <p class="formats">支援格式：TXT、DOCX、PDF（文字）/ MP3、WAV、M4A（錄音）</p>
       </div>
-
-      <div id="input-file">
-        <div class="upload-zone" id="upload-zone">
-          <input type="file" id="file-input" accept=".txt,.md,.doc,.docx,.pdf,.mp3,.wav,.m4a,.ogg,.webm,.mp4">
-          <div class="upload-icon">📁</div>
-          <p><strong>點擊或拖曳檔案到這裡</strong></p>
-          <p class="formats">支援格式：TXT、DOCX、PDF（文字）/ MP3、WAV、M4A（錄音）</p>
-        </div>
-        <div id="file-info" class="file-info" style="display:none;">
-          <span>📎</span>
-          <span class="file-name" id="file-name"></span>
-          <span class="file-remove" onclick="removeFile()">✕ 移除</span>
-        </div>
-      </div>
-
-      <div id="input-text" style="display:none;">
-        <textarea class="text-input" id="meeting-text" placeholder="在此貼上或輸入會議記錄內容...&#10;&#10;例如：&#10;與會人員：王經理、李主任&#10;會議主題：2024 年度行銷計畫討論&#10;會議內容：..."></textarea>
-      </div>
-
-      <div id="transcription-preview" style="display:none; margin-top:16px;">
-        <h3 style="font-size:0.95rem; margin-bottom:8px;">🎙️ 語音轉文字結果：</h3>
-        <textarea class="text-input" id="transcribed-text" style="min-height:150px;"></textarea>
-      </div>
-
-      <div class="btn-group">
-        <button class="btn btn-primary" onclick="goToStep2()" id="btn-next1">
-          下一步 →
-        </button>
+      <div id="file-info" class="file-info" style="display:none;">
+        <span>📎</span>
+        <span class="file-name" id="file-name"></span>
+        <span class="file-remove" onclick="removeFile()">✕ 移除</span>
       </div>
     </div>
-  </div>
 
-  <!-- Section 2: Select Output Types -->
-  <div class="section" id="section-select">
-    <div class="card">
-      <h2>📋 選擇要產出的文件</h2>
-
-      <div class="doc-options">
-        <div class="doc-option selected" data-type="research" onclick="toggleDocType(this)">
-          <div class="icon">🔍</div>
-          <div class="label">市場研究報告</div>
-          <div class="desc">市場分析、競品研究、目標受眾</div>
-        </div>
-        <div class="doc-option selected" data-type="proposal" onclick="toggleDocType(this)">
-          <div class="icon">📑</div>
-          <div class="label">行銷提案書</div>
-          <div class="desc">策略方向、執行方案、時程規劃</div>
-        </div>
-        <div class="doc-option selected" data-type="quotation" onclick="toggleDocType(this)">
-          <div class="icon">💰</div>
-          <div class="label">專案報價單</div>
-          <div class="desc">服務項目、費用明細、付款條件</div>
-        </div>
-      </div>
-
-      <details style="margin-top:16px;">
-        <summary style="cursor:pointer; color:var(--text-muted); font-size:0.9rem;">⚙️ 自訂格式模板</summary>
-        <div id="template-editor" style="margin-top:12px;"></div>
-      </details>
-
-      <div class="btn-group">
-        <button class="btn btn-secondary" onclick="goToStep(1)">← 上一步</button>
-        <button class="btn btn-primary" onclick="startProcessing()" id="btn-process">
-          開始產出 🚀
-        </button>
-      </div>
+    <div id="input-text" style="display:none;">
+      <textarea class="text-input" id="meeting-text" placeholder="在此貼上或輸入會議記錄內容...&#10;&#10;例如：&#10;與會人員：王經理、李主任&#10;會議主題：2024 年度行銷計畫討論&#10;會議內容：..."></textarea>
     </div>
-  </div>
 
-  <!-- Section 3: Results -->
-  <div class="section" id="section-results">
-    <div class="card">
-      <h2>📊 產出結果</h2>
-
-      <div class="result-tab-bar" id="result-tabs"></div>
-      <div id="result-contents"></div>
-
-      <div class="btn-group">
-        <button class="btn btn-secondary" onclick="goToStep(1)">← 重新開始</button>
-        <button class="btn btn-success" onclick="exportAll()">
-          📥 全部匯出 DOCX
-        </button>
-      </div>
+    <div id="transcription-preview" style="display:none; margin-top:16px;">
+      <h3 style="font-size:0.9rem; margin-bottom:8px; font-weight:600;">🎙️ 語音轉文字結果：</h3>
+      <textarea class="text-input" id="transcribed-text" style="min-height:150px;"></textarea>
     </div>
-  </div>
-</main>
 
-<!-- Loading Overlay -->
-<div class="loading-overlay" id="loading">
-  <div class="loading-box">
-    <div class="spinner"></div>
-    <p>AI 正在分析會議記錄</p>
-    <p class="loading-step" id="loading-step">準備中...</p>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="goToStep2()">下一步 →</button>
+    </div>
   </div>
 </div>
 
+<!-- Section 2: Select Output Types -->
+<div class="section" id="section-select">
+  <div class="card">
+    <div class="card-header"><h2>選擇要產出的文件</h2></div>
+
+    <div class="doc-options">
+      <div class="doc-option selected" data-type="research" onclick="toggleDocType(this)">
+        <div class="icon">🔍</div>
+        <div class="label">市場研究報告</div>
+        <div class="desc">市場分析、競品研究、目標受眾</div>
+      </div>
+      <div class="doc-option selected" data-type="proposal" onclick="toggleDocType(this)">
+        <div class="icon">📑</div>
+        <div class="label">行銷提案書</div>
+        <div class="desc">策略方向、執行方案、時程規劃</div>
+      </div>
+      <div class="doc-option selected" data-type="quotation" onclick="toggleDocType(this)">
+        <div class="icon">💰</div>
+        <div class="label">專案報價單</div>
+        <div class="desc">服務項目、費用明細、付款條件</div>
+      </div>
+    </div>
+
+    <details style="margin-top:16px;">
+      <summary style="cursor:pointer; color:var(--text-muted); font-size:0.85rem;">⚙️ 自訂格式模板</summary>
+      <div id="template-editor" style="margin-top:12px;"></div>
+    </details>
+
+    <div class="btn-group">
+      <button class="btn btn-secondary" onclick="goToStep(1)">← 上一步</button>
+      <button class="btn btn-primary" onclick="startProcessing()">開始產出 🚀</button>
+    </div>
+  </div>
+</div>
+
+<!-- Section 3: Results -->
+<div class="section" id="section-results">
+  <div class="card">
+    <div class="card-header"><h2>產出結果</h2></div>
+    <div class="result-tab-bar" id="result-tabs"></div>
+    <div id="result-contents"></div>
+    <div class="btn-group">
+      <button class="btn btn-secondary" onclick="goToStep(1)">← 重新開始</button>
+      <button class="btn btn-success" onclick="exportAll()">📥 全部匯出 DOCX</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
 <script src="/static/js/app.js"></script>
-</body>
-</html>
+{% endblock %}
