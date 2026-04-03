@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MarketAI - 工作包拆分派發</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/work_dispatch.css">
+</head>
+<body>
+
+<header>
+  <div class="container" style="display:flex; align-items:center; gap:16px;">
+    <a href="/" style="color:white; text-decoration:none; font-size:1.5rem;">←</a>
+    <div>
+      <h1>工作包拆分派發</h1>
+      <p>輸入報價單 → AI 自動拆分工作包 → 分派給對應團隊角色</p>
+    </div>
+  </div>
+</header>
+
+<main class="container">
+  <!-- Steps -->
+  <div class="steps">
+    <div class="step active" id="wd-step1">
+      <span class="step-num">1</span> 輸入報價單
+    </div>
+    <div class="step" id="wd-step2">
+      <span class="step-num">2</span> 設定團隊角色
+    </div>
+    <div class="step" id="wd-step3">
+      <span class="step-num">3</span> AI 拆分派發
+    </div>
+    <div class="step" id="wd-step4">
+      <span class="step-num">4</span> 檢視與匯出
+    </div>
+  </div>
+
+  <!-- Step 1: Input Quotation -->
+  <div class="section active" id="wd-section-input">
+    <div class="card">
+      <h2>輸入報價單 / 提案內容</h2>
+
+      <div class="form-group" style="margin-bottom:16px;">
+        <label>專案名稱 *</label>
+        <input type="text" id="wd-project-name" placeholder="例：ABC 品牌 2024 年度整合行銷專案">
+      </div>
+
+      <div class="input-toggle" style="margin-bottom:12px;">
+        <button class="active" onclick="wdToggleInput('paste')">直接輸入</button>
+        <button onclick="wdToggleInput('file')">上傳檔案</button>
+      </div>
+
+      <div id="wd-input-paste">
+        <textarea class="text-input" id="wd-quotation-text" style="min-height:280px;"
+          placeholder="貼上報價單或提案的服務項目內容...&#10;&#10;例如：&#10;1. 品牌視覺設計 - NT$80,000&#10;   - Logo 設計&#10;   - 品牌色彩規範&#10;   - 名片、信封設計&#10;&#10;2. 官方網站建置 - NT$250,000&#10;   - RWD 網站設計&#10;   - 前後台開發&#10;   - SEO 基礎建置&#10;&#10;3. 社群行銷經營（6個月）- NT$180,000&#10;   - FB/IG 內容企劃&#10;   - 每月 12 篇貼文&#10;   - 廣告投放管理&#10;&#10;4. Google Ads 投放管理（6個月）- NT$120,000&#10;   - 關鍵字廣告&#10;   - 多媒體廣告&#10;   - 月報分析"></textarea>
+      </div>
+
+      <div id="wd-input-file" style="display:none;">
+        <div class="upload-zone" id="wd-upload-zone">
+          <input type="file" id="wd-file-input" accept=".txt,.md,.doc,.docx,.pdf">
+          <div class="upload-icon">📁</div>
+          <p><strong>上傳報價單檔案</strong></p>
+          <p class="formats">支援格式：TXT、DOCX、PDF</p>
+        </div>
+        <div id="wd-file-info" class="file-info" style="display:none;">
+          <span>📎</span>
+          <span class="file-name" id="wd-file-name"></span>
+          <span class="file-remove" onclick="wdRemoveFile()">✕ 移除</span>
+        </div>
+      </div>
+
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="wdGoToStep(2)">下一步 →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Team Roles -->
+  <div class="section" id="wd-section-roles">
+    <div class="card">
+      <h2>設定團隊角色</h2>
+      <p style="color:var(--text-muted); margin-bottom:16px; font-size:0.9rem;">
+        選擇參與此專案的團隊角色，AI 會根據角色分配對應的工作包。
+      </p>
+
+      <div class="roles-grid" id="wd-roles-grid"></div>
+
+      <div class="add-role-bar">
+        <input type="text" id="wd-new-role-name" placeholder="自訂角色名稱">
+        <input type="text" id="wd-new-role-desc" placeholder="角色說明">
+        <button class="btn btn-secondary" onclick="wdAddCustomRole()">+ 新增角色</button>
+      </div>
+
+      <div class="btn-group">
+        <button class="btn btn-secondary" onclick="wdGoToStep(1)">← 上一步</button>
+        <button class="btn btn-primary" onclick="wdStartProcessing()">開始拆分 🚀</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 4: Results -->
+  <div class="section" id="wd-section-results">
+    <div class="card">
+      <h2>工作包分派結果</h2>
+      <div id="wd-results-content"></div>
+      <div class="btn-group">
+        <button class="btn btn-secondary" onclick="wdGoToStep(1)">← 重新開始</button>
+        <button class="btn btn-success" onclick="wdExportDocx()">📥 匯出 DOCX</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- Loading -->
+<div class="loading-overlay" id="loading">
+  <div class="loading-box">
+    <div class="spinner"></div>
+    <p>AI 正在分析報價單</p>
+    <p class="loading-step" id="loading-step">拆分工作包中...</p>
+  </div>
+</div>
+
+<script src="/static/js/work_dispatch.js"></script>
+</body>
+</html>

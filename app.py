@@ -178,6 +178,11 @@ def ad_report():
     return render_template("ad_report.html")
 
 
+@app.route("/work-dispatch")
+def work_dispatch():
+    return render_template("work_dispatch.html")
+
+
 @app.route("/api/upload", methods=["POST"])
 def upload_file():
     if "file" not in request.files:
@@ -476,6 +481,197 @@ def process_ad_report():
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+DEFAULT_ROLES = [
+    {"id": "finance", "name": "財務", "icon": "💰", "desc": "預算管理、請款、發票"},
+    {"id": "design", "name": "美術", "icon": "🎨", "desc": "視覺設計、素材製作"},
+    {"id": "planning", "name": "企劃", "icon": "📋", "desc": "策略規劃、內容企劃、專案管理"},
+    {"id": "webdev", "name": "網站工程師", "icon": "💻", "desc": "網站開發、Landing Page、技術串接"},
+    {"id": "ads", "name": "廣告投放", "icon": "📢", "desc": "廣告投放、優化、成效追蹤"},
+    {"id": "seo", "name": "SEO", "icon": "🔍", "desc": "搜尋引擎優化、內容優化、技術 SEO"},
+    {"id": "social", "name": "社群經營", "icon": "📱", "desc": "社群內容、互動管理、KOL 合作"},
+    {"id": "video", "name": "影音製作", "icon": "🎬", "desc": "影片企劃、拍攝、剪輯"},
+]
+
+
+def process_work_dispatch_with_ai(quotation_text: str, team_roles: list, project_name: str) -> dict:
+    """Use Claude API to break quotation into work packages assigned to team roles."""
+    client = anthropic.Anthropic()
+
+    roles_desc = "\n".join(
+        f"- **{r['name']}** ({r['id']}): {r['desc']}" for r in team_roles
+    )
+
+    prompt = f"""你是一位資深專案經理。請根據以下報價單/提案內容，將工作拆分成具體的工作包，並分派給對應的團隊角色。
+
+## 專案名稱：{project_name}
+
+## 報價單/提案內容：
+{quotation_text}
+
+## 可用團隊角色：
+{roles_desc}
+
+## 輸出要求：
+1. 使用繁體中文
+2. 請以 JSON 格式回覆：
+{{
+  "project_name": "{project_name}",
+  "summary": "專案概述（1-2句話）",
+  "total_items": 工作包總數,
+  "work_packages": [
+    {{
+      "id": "WP-001",
+      "name": "工作包名稱",
+      "description": "具體工作說明",
+      "assigned_to": "角色 id",
+      "assigned_role_name": "角色名稱",
+      "deliverables": ["交付物1", "交付物2"],
+      "priority": "high/medium/low",
+      "estimated_days": 預估工作天數,
+      "dependencies": ["依賴的工作包 id，如 WP-001"],
+      "notes": "備註或注意事項"
+    }}
+  ],
+  "timeline_suggestion": "建議時程安排說明",
+  "role_summary": [
+    {{
+      "role_id": "角色 id",
+      "role_name": "角色名稱",
+      "package_count": 負責的工作包數,
+      "total_days": 預估總工作天數,
+      "packages": ["WP-001", "WP-002"]
+    }}
+  ],
+  "notes": "其他整體注意事項或建議"
+}}
+
+3. 工作包要具體、可執行，避免太模糊
+4. 每個工作包只分配給一個主要角色（如需跨角色協作，在 notes 中說明）
+5. 標明工作包之間的依賴關係
+6. 優先級根據時程急迫性和重要性判斷
+7. 如果報價單中的某項工作不屬於任何現有角色，請指定最接近的角色並在 notes 中說明
+
+請直接回覆 JSON，不要加任何其他文字。"""
+
+    message = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=8192,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    response_text = message.content[0].text.strip()
+    if response_text.startswith("```"):
+        lines = response_text.split("\n")
+        response_text = "\n".join(lines[1:])
+        if response_text.endswith("```"):
+            response_text = response_text[:-3].strip()
+
+    return json.loads(response_text)
+
+
+def generate_dispatch_docx(result: dict) -> str:
+    """Generate a .docx work dispatch document."""
+    from docx import Document
+    from docx.shared import Pt
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    doc = Document()
+
+    title = doc.add_heading(f"工作包分派表 - {result.get('project_name', '')}", level=0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    doc.add_paragraph(f"專案概述：{result.get('summary', '')}")
+    doc.add_paragraph(f"工作包總數：{result.get('total_items', 0)}")
+    doc.add_paragraph("")
+
+    # Role summary
+    doc.add_heading("角色工作量總覽", level=1)
+    for role in result.get("role_summary", []):
+        doc.add_paragraph(
+            f"{role['role_name']}：{role['package_count']} 個工作包，"
+            f"預估 {role['total_days']} 工作天",
+            style="List Bullet"
+        )
+
+    doc.add_paragraph("")
+
+    # Work packages
+    doc.add_heading("工作包明細", level=1)
+    for wp in result.get("work_packages", []):
+        doc.add_heading(f"{wp['id']} - {wp['name']}", level=2)
+        doc.add_paragraph(f"負責角色：{wp.get('assigned_role_name', '')}")
+        doc.add_paragraph(f"優先級：{wp.get('priority', '')}")
+        doc.add_paragraph(f"預估天數：{wp.get('estimated_days', '')} 天")
+        doc.add_paragraph(f"說明：{wp.get('description', '')}")
+
+        if wp.get("deliverables"):
+            doc.add_paragraph("交付物：")
+            for d in wp["deliverables"]:
+                doc.add_paragraph(d, style="List Bullet")
+
+        if wp.get("dependencies"):
+            doc.add_paragraph(f"依賴：{', '.join(wp['dependencies'])}")
+        if wp.get("notes"):
+            doc.add_paragraph(f"備註：{wp['notes']}")
+
+        doc.add_paragraph("")
+
+    # Timeline
+    if result.get("timeline_suggestion"):
+        doc.add_heading("建議時程", level=1)
+        doc.add_paragraph(result["timeline_suggestion"])
+
+    # Notes
+    if result.get("notes"):
+        doc.add_heading("整體注意事項", level=1)
+        doc.add_paragraph(result["notes"])
+
+    filename = f"work_dispatch_{uuid.uuid4().hex[:8]}.docx"
+    output_path = OUTPUT_FOLDER / filename
+    doc.save(str(output_path))
+    return filename
+
+
+@app.route("/api/work-dispatch/roles", methods=["GET"])
+def get_default_roles():
+    return jsonify(DEFAULT_ROLES)
+
+
+@app.route("/api/work-dispatch/process", methods=["POST"])
+def process_work_dispatch():
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "缺少資料"}), 400
+
+    if not data.get("quotation_text"):
+        return jsonify({"error": "請輸入報價單或提案內容"}), 400
+    if not data.get("roles"):
+        return jsonify({"error": "請至少選擇一個團隊角色"}), 400
+
+    try:
+        result = process_work_dispatch_with_ai(
+            data["quotation_text"],
+            data["roles"],
+            data.get("project_name", "未命名專案"),
+        )
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/work-dispatch/export", methods=["POST"])
+def export_work_dispatch():
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "缺少資料"}), 400
+
+    try:
+        filename = generate_dispatch_docx(data)
+        return jsonify({"filename": filename})
+    except Exception as e:
+        return jsonify({"error": f"匯出失敗：{str(e)}"}), 500
 
 
 @app.route("/api/ad-report/export", methods=["POST"])
