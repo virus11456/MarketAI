@@ -22,6 +22,34 @@
     </div>
 
     <div id="input-file">
+      <!-- Whisper Settings -->
+      <div class="whisper-config" id="whisper-config">
+        <div class="config-header" onclick="document.getElementById('whisper-options').classList.toggle('show')">
+          <span>🎙️ 語音辨識設定</span>
+          <span class="config-toggle">▾</span>
+        </div>
+        <div class="config-options" id="whisper-options">
+          <div class="config-row">
+            <div class="form-group">
+              <label>Whisper 模型</label>
+              <select id="whisper-model">
+                <option value="large-v3" selected>large-v3（最精準，需 GPU）</option>
+                <option value="medium">medium（平衡速度與精準）</option>
+                <option value="base">base（最快，精準度較低）</option>
+                <option value="tiny">tiny（極速，適合測試）</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>會議背景提示（initial_prompt）</label>
+              <input type="text" id="initial-prompt"
+                placeholder="例：這是一場關於品牌網站改版的中文會議錄音。"
+                value="">
+            </div>
+          </div>
+          <p class="config-hint">提供會議背景可大幅提升中文辨識精準度。例如提到的公司名、產品名、專有名詞等。</p>
+        </div>
+      </div>
+
       <div class="upload-zone" id="upload-zone">
         <input type="file" id="file-input" accept=".txt,.md,.doc,.docx,.pdf,.mp3,.wav,.m4a,.ogg,.webm,.mp4">
         <div class="upload-icon">📁</div>
@@ -39,9 +67,25 @@
       <textarea class="text-input" id="meeting-text" placeholder="在此貼上或輸入會議記錄內容...&#10;&#10;例如：&#10;與會人員：王經理、李主任&#10;會議主題：2024 年度行銷計畫討論&#10;會議內容：..."></textarea>
     </div>
 
+    <!-- Transcription Result -->
     <div id="transcription-preview" style="display:none; margin-top:16px;">
-      <h3 style="font-size:0.9rem; margin-bottom:8px; font-weight:600;">🎙️ 語音轉文字結果：</h3>
-      <textarea class="text-input" id="transcribed-text" style="min-height:150px;"></textarea>
+      <div class="transcription-header">
+        <h3>🎙️ 語音轉文字結果</h3>
+        <div class="input-toggle" style="margin:0;">
+          <button class="active" onclick="switchTranscriptView('timestamped')">帶時間戳記</button>
+          <button onclick="switchTranscriptView('plain')">純文字</button>
+        </div>
+      </div>
+      <div id="transcript-timestamped">
+        <textarea class="text-input transcript-area" id="transcribed-text-ts" style="min-height:200px;" readonly></textarea>
+      </div>
+      <div id="transcript-plain" style="display:none;">
+        <textarea class="text-input transcript-area" id="transcribed-text" style="min-height:200px;"></textarea>
+      </div>
+      <div class="transcript-actions">
+        <button class="btn btn-secondary" onclick="downloadTranscript()">📥 下載逐字稿 TXT</button>
+        <span class="transcript-info" id="transcript-info"></span>
+      </div>
     </div>
 
     <div class="btn-group">
@@ -97,6 +141,96 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+/* Whisper Config */
+.whisper-config {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.config-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--bg);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  user-select: none;
+}
+
+.config-toggle {
+  transition: transform 0.2s;
+  color: var(--text-muted);
+}
+
+.config-options {
+  display: none;
+  padding: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.config-options.show {
+  display: block;
+}
+
+.config-row {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 14px;
+}
+
+.config-hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 10px;
+  line-height: 1.5;
+}
+
+/* Transcription */
+.transcription-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.transcription-header h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.transcript-area {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.88rem;
+  line-height: 1.7;
+}
+
+.transcript-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.transcript-info {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+@media (max-width: 768px) {
+  .config-row { grid-template-columns: 1fr; }
+  .transcription-header { flex-direction: column; align-items: flex-start; }
+}
+</style>
 {% endblock %}
 
 {% block extra_js %}

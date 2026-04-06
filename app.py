@@ -34,13 +34,37 @@ def load_template(template_type: str) -> dict:
         return json.load(f)
 
 
-def transcribe_audio(file_path: str) -> str:
-    """Transcribe audio file using OpenAI Whisper."""
+def transcribe_audio(file_path: str, model_size: str = "large-v3", initial_prompt: str = "") -> dict:
+    """Transcribe audio file using OpenAI Whisper with timestamps."""
     import whisper
 
-    model = whisper.load_model("base")
-    result = model.transcribe(file_path, language="zh")
-    return result["text"]
+    model = whisper.load_model(model_size)
+
+    transcribe_opts = {"language": "zh"}
+    if initial_prompt:
+        transcribe_opts["initial_prompt"] = initial_prompt
+
+    result = model.transcribe(file_path, **transcribe_opts)
+
+    # Build timestamped transcript
+    timestamped_lines = []
+    for seg in result.get("segments", []):
+        start = int(seg["start"])
+        mm, ss = divmod(start, 60)
+        timestamped_lines.append(f"[{mm:02d}:{ss:02d}] {seg['text'].strip()}")
+
+    return {
+        "text": result["text"],
+        "timestamped": "\n".join(timestamped_lines),
+        "segments": [
+            {
+                "start": seg["start"],
+                "end": seg["end"],
+                "text": seg["text"].strip(),
+            }
+            for seg in result.get("segments", [])
+        ],
+    }
 
 
 def read_text_file(file_path: str) -> str:
@@ -203,13 +227,21 @@ def upload_file():
     # Extract text
     try:
         if ext in ALLOWED_AUDIO_EXT:
-            text = transcribe_audio(str(file_path))
+            model_size = request.form.get("whisper_model", "large-v3")
+            initial_prompt = request.form.get("initial_prompt", "")
+            result = transcribe_audio(str(file_path), model_size, initial_prompt)
+            return jsonify({
+                "text": result["text"],
+                "timestamped": result["timestamped"],
+                "segments": result["segments"],
+                "filename": filename,
+                "is_audio": True,
+            })
         else:
             text = read_text_file(str(file_path))
+            return jsonify({"text": text, "filename": filename, "is_audio": False})
     except Exception as e:
         return jsonify({"error": f"檔案處理失敗：{str(e)}"}), 500
-
-    return jsonify({"text": text, "filename": filename})
 
 
 @app.route("/api/process", methods=["POST"])

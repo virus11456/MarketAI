@@ -2,11 +2,13 @@
 let meetingText = '';
 let uploadedFilename = '';
 let processResults = {};
+let transcriptTimestamped = '';
+let transcriptSegments = [];
 
 // --- Input Toggle ---
 function toggleInput(mode) {
-  const btns = document.querySelectorAll('.input-toggle button');
-  btns.forEach(b => b.classList.remove('active'));
+  const toggle = event.target.closest('.input-toggle');
+  toggle.querySelectorAll('button').forEach(b => b.classList.remove('active'));
   event.target.classList.add('active');
 
   document.getElementById('input-file').style.display = mode === 'file' ? 'block' : 'none';
@@ -48,7 +50,21 @@ async function handleFileSelect(file) {
   const formData = new FormData();
   formData.append('file', file);
 
-  showLoading('正在處理檔案...');
+  // Add Whisper settings for audio files
+  const audioExts = ['.mp3', '.wav', '.m4a', '.ogg', '.webm', '.mp4'];
+  const ext = '.' + file.name.split('.').pop().toLowerCase();
+  const isAudio = audioExts.includes(ext);
+
+  if (isAudio) {
+    const modelSelect = document.getElementById('whisper-model');
+    const promptInput = document.getElementById('initial-prompt');
+    formData.append('whisper_model', modelSelect.value);
+    formData.append('initial_prompt', promptInput.value);
+
+    showLoading(`使用 Whisper ${modelSelect.value} 模型轉錄中...`);
+  } else {
+    showLoading('正在處理檔案...');
+  }
 
   try {
     const res = await fetch('/api/upload', { method: 'POST', body: formData });
@@ -63,15 +79,28 @@ async function handleFileSelect(file) {
     meetingText = data.text;
     uploadedFilename = data.filename;
 
-    // Show transcription preview for audio files
-    const audioExts = ['.mp3', '.wav', '.m4a', '.ogg', '.webm', '.mp4'];
-    const ext = '.' + file.name.split('.').pop().toLowerCase();
-    if (audioExts.includes(ext)) {
-      document.getElementById('transcription-preview').style.display = 'block';
-      document.getElementById('transcribed-text').value = meetingText;
-    }
+    if (data.is_audio) {
+      transcriptTimestamped = data.timestamped || '';
+      transcriptSegments = data.segments || [];
 
-    showToast('檔案處理完成！', 'success');
+      // Show transcription preview
+      document.getElementById('transcription-preview').style.display = 'block';
+      document.getElementById('transcribed-text-ts').value = transcriptTimestamped;
+      document.getElementById('transcribed-text').value = meetingText;
+
+      // Show segment count
+      const duration = transcriptSegments.length > 0
+        ? Math.ceil(transcriptSegments[transcriptSegments.length - 1].end)
+        : 0;
+      const mm = Math.floor(duration / 60);
+      const ss = duration % 60;
+      document.getElementById('transcript-info').textContent =
+        `${transcriptSegments.length} 段落 · 總長 ${mm} 分 ${ss} 秒`;
+
+      showToast('語音轉文字完成！', 'success');
+    } else {
+      showToast('檔案處理完成！', 'success');
+    }
   } catch (err) {
     showToast('檔案上傳失敗：' + err.message, 'error');
     removeFile();
@@ -84,8 +113,40 @@ function removeFile() {
   fileInput.value = '';
   uploadedFilename = '';
   meetingText = '';
+  transcriptTimestamped = '';
+  transcriptSegments = [];
   document.getElementById('file-info').style.display = 'none';
   document.getElementById('transcription-preview').style.display = 'none';
+}
+
+// --- Transcript View Toggle ---
+function switchTranscriptView(mode) {
+  const toggle = event.target.closest('.input-toggle');
+  toggle.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+
+  document.getElementById('transcript-timestamped').style.display = mode === 'timestamped' ? 'block' : 'none';
+  document.getElementById('transcript-plain').style.display = mode === 'plain' ? 'block' : 'none';
+}
+
+// --- Download Transcript ---
+function downloadTranscript() {
+  const text = transcriptTimestamped || meetingText;
+  if (!text) {
+    showToast('沒有可下載的逐字稿', 'error');
+    return;
+  }
+
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '逐字稿.txt';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('逐字稿已下載', 'success');
 }
 
 // --- Step Navigation ---
@@ -113,10 +174,10 @@ function goToStep(num) {
 function goToStep2() {
   // Get text from either file upload or direct input
   const directText = document.getElementById('meeting-text').value.trim();
-  const transcribedText = document.getElementById('transcribed-text').value.trim();
+  const plainText = document.getElementById('transcribed-text').value.trim();
 
-  if (transcribedText) {
-    meetingText = transcribedText; // Allow edited transcription
+  if (plainText) {
+    meetingText = plainText;
   } else if (directText) {
     meetingText = directText;
   }
@@ -159,9 +220,9 @@ async function loadTemplateEditor() {
       html += `<div style="margin-bottom:20px;">
         <h4 style="margin-bottom:8px;">${typeNames[type] || tpl.name}</h4>`;
       tpl.sections.forEach((s, i) => {
-        html += `<div class="template-section-item">
-          <input value="${s.title}" data-type="${type}" data-index="${i}" data-field="title" placeholder="段落標題">
-          <input value="${s.description}" data-type="${type}" data-index="${i}" data-field="description" placeholder="說明">
+        html += `<div style="display:flex;gap:12px;margin-bottom:8px;">
+          <input style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:0.88rem;" value="${s.title}" data-type="${type}" data-index="${i}" data-field="title" placeholder="段落標題">
+          <input style="flex:2;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:0.88rem;" value="${s.description}" data-type="${type}" data-index="${i}" data-field="description" placeholder="說明">
         </div>`;
       });
       html += `</div>`;
@@ -191,7 +252,6 @@ async function startProcessing() {
   };
 
   try {
-    // Update loading step for each type
     for (let i = 0; i < types.length; i++) {
       updateLoadingStep(`正在產出 ${typeNames[types[i]]}（${i + 1}/${types.length}）`);
     }
@@ -278,11 +338,8 @@ function markdownToHtml(text) {
   if (!text) return '';
 
   let html = text
-    // Bold
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    // Italic
     .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    // Headers
     .replace(/^### (.*$)/gm, '<h4>$1</h4>')
     .replace(/^## (.*$)/gm, '<h3>$1</h3>');
 
@@ -295,7 +352,7 @@ function markdownToHtml(text) {
     const processed = [];
     for (const line of lines) {
       if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
-        if (line.trim().match(/^\|[\s\-:|]+\|$/)) continue; // separator row
+        if (line.trim().match(/^\|[\s\-:|]+\|$/)) continue;
         const cells = line.trim().split('|').filter(c => c.trim());
         if (!inTable) {
           inTable = true;
@@ -324,11 +381,9 @@ function markdownToHtml(text) {
     html = processed.join('\n');
   }
 
-  // Lists
   html = html.replace(/^- (.*$)/gm, '<li>$1</li>');
   html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
 
-  // Paragraphs
   html = html.replace(/\n\n/g, '</p><p>');
   html = html.replace(/\n/g, '<br>');
 
@@ -356,7 +411,6 @@ async function exportDoc(type) {
       return;
     }
 
-    // Trigger download
     window.location.href = `/api/download/${data.filename}`;
     showToast('檔案已開始下載', 'success');
   } catch (err) {
@@ -368,34 +422,11 @@ async function exportAll() {
   const types = Object.keys(processResults).filter(t => !processResults[t].error);
   for (const type of types) {
     await exportDoc(type);
-    // Small delay between downloads
     await new Promise(r => setTimeout(r, 500));
   }
 }
 
-// --- Loading ---
-function showLoading(msg) {
-  document.getElementById('loading').classList.add('show');
-  updateLoadingStep(msg || '處理中...');
-}
-
+// --- Loading (use global from base.html if available, fallback) ---
 function updateLoadingStep(msg) {
   document.getElementById('loading-step').textContent = msg;
-}
-
-function hideLoading() {
-  document.getElementById('loading').classList.remove('show');
-}
-
-// --- Toast ---
-function showToast(msg, type) {
-  const existing = document.querySelector('.toast');
-  if (existing) existing.remove();
-
-  const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
-  toast.textContent = msg;
-  document.body.appendChild(toast);
-
-  setTimeout(() => toast.remove(), 3000);
 }
