@@ -36,6 +36,13 @@ ALLOWED_EXTENSIONS = ALLOWED_TEXT_EXT | ALLOWED_AUDIO_EXT
 
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB
 
+ANTHROPIC_BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+
+
+def get_ai_client():
+    return anthropic.Anthropic(base_url=ANTHROPIC_BASE_URL)
+
 
 def load_template(template_type: str) -> dict:
     path = TEMPLATE_FOLDER / f"{template_type}.json"
@@ -138,7 +145,7 @@ def read_text_file(file_path: str) -> str:
 
 def process_with_ai(meeting_text: str, template_type: str) -> dict:
     """Use Claude API to process meeting notes into structured output."""
-    client = anthropic.Anthropic()
+    client = get_ai_client()
     template = load_template(template_type)
 
     sections_desc = "\n".join(
@@ -181,7 +188,7 @@ def process_with_ai(meeting_text: str, template_type: str) -> dict:
 請直接回覆 JSON，不要加任何其他文字。"""
 
     message = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model=ANTHROPIC_MODEL,
         max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -398,7 +405,7 @@ PLATFORM_LABELS = {
 
 def process_ad_report_with_ai(report_info: dict) -> dict:
     """Use Claude API to generate ad monthly report."""
-    client = anthropic.Anthropic()
+    client = get_ai_client()
 
     client_name = report_info.get("client_name", "")
     company_name = report_info.get("company_name", "")
@@ -490,7 +497,7 @@ def process_ad_report_with_ai(report_info: dict) -> dict:
 請直接回覆 JSON，不要加任何其他文字。"""
 
     message = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model=ANTHROPIC_MODEL,
         max_tokens=8192,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -606,7 +613,7 @@ DEFAULT_ROLES = [
 
 def process_work_dispatch_with_ai(quotation_text: str, team_roles: list, project_name: str) -> dict:
     """Use Claude API to break quotation into work packages assigned to team roles."""
-    client = anthropic.Anthropic()
+    client = get_ai_client()
 
     roles_desc = "\n".join(
         f"- **{r['name']}** ({r['id']}): {r['desc']}" for r in team_roles
@@ -665,7 +672,7 @@ def process_work_dispatch_with_ai(quotation_text: str, team_roles: list, project
 請直接回覆 JSON，不要加任何其他文字。"""
 
     message = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model=ANTHROPIC_MODEL,
         max_tokens=8192,
         messages=[{"role": "user", "content": prompt}],
     )
