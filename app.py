@@ -30,7 +30,7 @@ TEMPLATE_FOLDER = Path(__file__).parent / "company_templates"
 UPLOAD_FOLDER.mkdir(exist_ok=True)
 OUTPUT_FOLDER.mkdir(exist_ok=True)
 
-ALLOWED_TEXT_EXT = {".txt", ".md", ".doc", ".docx", ".pdf"}
+ALLOWED_TEXT_EXT = {".txt", ".md", ".doc", ".docx", ".pdf", ".csv", ".xlsx", ".xls"}
 ALLOWED_AUDIO_EXT = {".mp3", ".wav", ".m4a", ".ogg", ".webm", ".mp4"}
 ALLOWED_EXTENSIONS = ALLOWED_TEXT_EXT | ALLOWED_AUDIO_EXT
 
@@ -108,6 +108,29 @@ def read_text_file(file_path: str) -> str:
 
         doc = Document(file_path)
         return "\n".join(p.text for p in doc.paragraphs)
+    elif ext == ".csv":
+        import csv
+
+        rows = []
+        with open(file_path, "r", encoding="utf-8-sig") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                rows.append(",".join(row))
+        return "\n".join(rows)
+    elif ext in (".xlsx", ".xls"):
+        from openpyxl import load_workbook
+
+        wb = load_workbook(file_path, read_only=True, data_only=True)
+        lines = []
+        for sheet in wb.sheetnames:
+            ws = wb[sheet]
+            lines.append(f"[工作表: {sheet}]")
+            for row in ws.iter_rows(values_only=True):
+                cells = [str(c) if c is not None else "" for c in row]
+                lines.append(",".join(cells))
+            lines.append("")
+        wb.close()
+        return "\n".join(lines)
     else:
         with open(file_path, "r", encoding="utf-8") as f:
             return f.read()
