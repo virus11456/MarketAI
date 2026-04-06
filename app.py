@@ -11,11 +11,18 @@ import anthropic
 
 load_dotenv()
 
+IS_VERCEL = os.getenv("VERCEL", "") == "1"
+
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret-key")
 
-UPLOAD_FOLDER = Path(__file__).parent / "uploads"
-OUTPUT_FOLDER = Path(__file__).parent / "outputs"
+if IS_VERCEL:
+    UPLOAD_FOLDER = Path("/tmp/uploads")
+    OUTPUT_FOLDER = Path("/tmp/outputs")
+else:
+    UPLOAD_FOLDER = Path(__file__).parent / "uploads"
+    OUTPUT_FOLDER = Path(__file__).parent / "outputs"
+
 TEMPLATE_FOLDER = Path(__file__).parent / "company_templates"
 
 UPLOAD_FOLDER.mkdir(exist_ok=True)
@@ -36,7 +43,14 @@ def load_template(template_type: str) -> dict:
 
 def transcribe_audio(file_path: str, model_size: str = "large-v3", initial_prompt: str = "") -> dict:
     """Transcribe audio file using OpenAI Whisper with timestamps."""
-    import whisper
+    try:
+        import whisper
+    except ImportError:
+        raise RuntimeError(
+            "語音轉文字功能需要安裝 openai-whisper。"
+            "請執行 pip install -r requirements-local.txt"
+        )
+
 
     model = whisper.load_model(model_size)
 

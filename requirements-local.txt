@@ -1,0 +1,3 @@
+# All dependencies including Whisper (for local use with GPU)
+-r requirements.txt
+openai-whisper==20240930
