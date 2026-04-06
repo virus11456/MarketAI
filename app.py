@@ -4,6 +4,8 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+import requests as http_requests
+
 from flask import Flask, render_template, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
@@ -41,8 +43,27 @@ def load_template(template_type: str) -> dict:
         return json.load(f)
 
 
-def transcribe_audio(file_path: str, model_size: str = "large-v3", initial_prompt: str = "") -> dict:
-    """Transcribe audio file using OpenAI Whisper with timestamps."""
+def transcribe_audio_remote(file_path: str, colab_url: str, initial_prompt: str = "") -> dict:
+    """Send audio to remote Colab Whisper API for transcription."""
+    url = colab_url.rstrip("/") + "/transcribe"
+
+    with open(file_path, "rb") as f:
+        files = {"file": (Path(file_path).name, f)}
+        data = {"language": "zh"}
+        if initial_prompt:
+            data["initial_prompt"] = initial_prompt
+
+        resp = http_requests.post(url, files=files, data=data, timeout=600)
+
+    if resp.status_code != 200:
+        error = resp.json().get("error", "Unknown error")
+        raise RuntimeError(f"Colab API error: {error}")
+
+    return resp.json()
+
+
+def transcribe_audio_local(file_path: str, model_size: str = "large-v3", initial_prompt: str = "") -> dict:
+    """Transcribe audio file using local OpenAI Whisper."""
     try:
         import whisper
     except ImportError:
@@ -50,7 +71,6 @@ def transcribe_audio(file_path: str, model_size: str = "large-v3", initial_promp
             "語音轉文字功能需要安裝 openai-whisper。"
             "請執行 pip install -r requirements-local.txt"
         )
-
 
     model = whisper.load_model(model_size)
 
@@ -60,7 +80,6 @@ def transcribe_audio(file_path: str, model_size: str = "large-v3", initial_promp
 
     result = model.transcribe(file_path, **transcribe_opts)
 
-    # Build timestamped transcript
     timestamped_lines = []
     for seg in result.get("segments", []):
         start = int(seg["start"])
@@ -221,6 +240,19 @@ def work_dispatch():
     return render_template("work_dispatch.html", active_page="work_dispatch")
 
 
+@app.route("/api/colab-health", methods=["POST"])
+def check_colab_health():
+    data = request.get_json()
+    colab_url = data.get("url", "").strip().rstrip("/")
+    if not colab_url:
+        return jsonify({"error": "請輸入 Colab API URL"}), 400
+    try:
+        resp = http_requests.get(f"{colab_url}/health", timeout=10)
+        return jsonify(resp.json())
+    except Exception as e:
+        return jsonify({"error": f"無法連線到 Colab：{str(e)}"}), 500
+
+
 @app.route("/api/upload", methods=["POST"])
 def upload_file():
     if "file" not in request.files:
@@ -241,9 +273,17 @@ def upload_file():
     # Extract text
     try:
         if ext in ALLOWED_AUDIO_EXT:
-            model_size = request.form.get("whisper_model", "large-v3")
             initial_prompt = request.form.get("initial_prompt", "")
-            result = transcribe_audio(str(file_path), model_size, initial_prompt)
+            colab_url = request.form.get("colab_url", "").strip()
+
+            if colab_url:
+                # Use remote Colab Whisper API
+                result = transcribe_audio_remote(str(file_path), colab_url, initial_prompt)
+            else:
+                # Use local Whisper
+                model_size = request.form.get("whisper_model", "large-v3")
+                result = transcribe_audio_local(str(file_path), model_size, initial_prompt)
+
             return jsonify({
                 "text": result["text"],
                 "timestamped": result["timestamped"],

@@ -29,24 +29,51 @@
           <span class="config-toggle">▾</span>
         </div>
         <div class="config-options" id="whisper-options">
-          <div class="config-row">
-            <div class="form-group">
-              <label>Whisper 模型</label>
-              <select id="whisper-model">
-                <option value="large-v3" selected>large-v3（最精準，需 GPU）</option>
-                <option value="medium">medium（平衡速度與精準）</option>
-                <option value="base">base（最快，精準度較低）</option>
-                <option value="tiny">tiny（極速，適合測試）</option>
-              </select>
+          <!-- Colab Connection -->
+          <div class="colab-section">
+            <div class="colab-row">
+              <div class="form-group" style="flex:1;">
+                <label>Google Colab Whisper API URL</label>
+                <input type="text" id="colab-url"
+                  placeholder="例：https://xxxx-xx-xx.ngrok-free.app"
+                  value="">
+              </div>
+              <button class="btn btn-secondary" onclick="testColabConnection()" id="btn-test-colab" style="margin-top:22px; white-space:nowrap;">
+                測試連線
+              </button>
             </div>
-            <div class="form-group">
-              <label>會議背景提示（initial_prompt）</label>
-              <input type="text" id="initial-prompt"
-                placeholder="例：這是一場關於品牌網站改版的中文會議錄音。"
-                value="">
-            </div>
+            <div id="colab-status" class="colab-status"></div>
+            <p class="config-hint" style="margin-top:6px;">
+              在 Google Colab 執行 <code>colab_whisper_api.ipynb</code> 取得 URL。使用 Colab GPU 跑 large-v3 模型，精準度最高。
+            </p>
           </div>
-          <p class="config-hint">提供會議背景可大幅提升中文辨識精準度。例如提到的公司名、產品名、專有名詞等。</p>
+
+          <hr style="border:none; border-top:1px solid var(--border); margin:16px 0;">
+
+          <details>
+            <summary style="cursor:pointer; font-size:0.85rem; color:var(--text-muted);">本機 Whisper 設定（無 Colab 時使用）</summary>
+            <div class="config-row" style="margin-top:12px;">
+              <div class="form-group">
+                <label>Whisper 模型</label>
+                <select id="whisper-model">
+                  <option value="large-v3" selected>large-v3（最精準，需 GPU）</option>
+                  <option value="medium">medium（平衡速度與精準）</option>
+                  <option value="base">base（最快，精準度較低）</option>
+                  <option value="tiny">tiny（極速，適合測試）</option>
+                </select>
+              </div>
+            </div>
+          </details>
+
+          <hr style="border:none; border-top:1px solid var(--border); margin:16px 0;">
+
+          <div class="form-group">
+            <label>會議背景提示（initial_prompt）</label>
+            <input type="text" id="initial-prompt"
+              placeholder="例：這是一場關於品牌網站改版的中文會議錄音。"
+              value="">
+          </div>
+          <p class="config-hint" style="margin-top:8px;">提供會議背景可大幅提升中文辨識精準度。例如提到的公司名、產品名、專有名詞等。</p>
         </div>
       </div>
 
@@ -191,6 +218,44 @@
   color: var(--text-muted);
   margin-top: 10px;
   line-height: 1.5;
+}
+
+.config-hint code {
+  background: var(--bg);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+}
+
+/* Colab Section */
+.colab-section {
+  margin-bottom: 4px;
+}
+
+.colab-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.colab-status {
+  font-size: 0.85rem;
+  margin-top: 8px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  display: none;
+}
+
+.colab-status.success {
+  display: block;
+  background: var(--success-light);
+  color: var(--success);
+}
+
+.colab-status.error {
+  display: block;
+  background: var(--error-light);
+  color: var(--error);
 }
 
 /* Transcription */

@@ -56,12 +56,18 @@ async function handleFileSelect(file) {
   const isAudio = audioExts.includes(ext);
 
   if (isAudio) {
-    const modelSelect = document.getElementById('whisper-model');
+    const colabUrl = document.getElementById('colab-url').value.trim();
     const promptInput = document.getElementById('initial-prompt');
-    formData.append('whisper_model', modelSelect.value);
     formData.append('initial_prompt', promptInput.value);
 
-    showLoading(`使用 Whisper ${modelSelect.value} 模型轉錄中...`);
+    if (colabUrl) {
+      formData.append('colab_url', colabUrl);
+      showLoading('透過 Google Colab GPU 轉錄中（large-v3）...');
+    } else {
+      const modelSelect = document.getElementById('whisper-model');
+      formData.append('whisper_model', modelSelect.value);
+      showLoading(`使用本機 Whisper ${modelSelect.value} 模型轉錄中...`);
+    }
   } else {
     showLoading('正在處理檔案...');
   }
@@ -430,3 +436,55 @@ async function exportAll() {
 function updateLoadingStep(msg) {
   document.getElementById('loading-step').textContent = msg;
 }
+
+// --- Colab Connection Test ---
+async function testColabConnection() {
+  const url = document.getElementById('colab-url').value.trim();
+  const statusEl = document.getElementById('colab-status');
+  const btn = document.getElementById('btn-test-colab');
+
+  if (!url) {
+    showToast('請輸入 Colab API URL', 'error');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '測試中...';
+  statusEl.className = 'colab-status';
+  statusEl.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/colab-health', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+
+    const data = await res.json();
+
+    if (data.error) {
+      statusEl.className = 'colab-status error';
+      statusEl.textContent = '連線失敗：' + data.error;
+    } else {
+      statusEl.className = 'colab-status success';
+      statusEl.textContent = `連線成功！模型：${data.model} · GPU：${data.gpu}`;
+      // Save to localStorage
+      localStorage.setItem('marketai_colab_url', url);
+    }
+  } catch (err) {
+    statusEl.className = 'colab-status error';
+    statusEl.textContent = '連線失敗：' + err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '測試連線';
+  }
+}
+
+// --- Init: restore saved Colab URL ---
+document.addEventListener('DOMContentLoaded', () => {
+  const savedUrl = localStorage.getItem('marketai_colab_url');
+  if (savedUrl) {
+    const input = document.getElementById('colab-url');
+    if (input) input.value = savedUrl;
+  }
+});
