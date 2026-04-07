@@ -309,6 +309,10 @@ def upload_file():
             if colab_url:
                 # Use remote Colab Whisper API
                 result = transcribe_audio_remote(str(file_path), colab_url, initial_prompt)
+            elif IS_VERCEL:
+                return jsonify({
+                    "error": "雲端版不支援本機語音轉文字。請先在「語音辨識設定」中填入 Colab API URL，或直接上傳文字檔。"
+                }), 400
             else:
                 # Use local Whisper
                 model_size = request.form.get("whisper_model", "large-v3")
