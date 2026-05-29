@@ -40,7 +40,7 @@ ANTHROPIC_BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com"
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
 
 # DeepSeek (OpenAI-compatible) — 用於把逐字稿整理成會議記錄
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "sk-980fec868e7b482b91949dd882b1627d")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
@@ -280,12 +280,12 @@ def _strip_code_fence(content: str) -> str:
     return content
 
 
-def call_deepseek(messages: list, temperature: float = 0.3, max_tokens: int | None = None) -> str:
+def call_deepseek(messages: list, temperature: float = 0.3, max_tokens: int | None = None,
+                  api_key: str | None = None) -> str:
     """Call the DeepSeek (OpenAI-compatible) chat completions API and return the text content."""
-    if not DEEPSEEK_API_KEY:
-        raise RuntimeError(
-            "尚未設定 DEEPSEEK_API_KEY 環境變數。請在 Vercel 環境變數或本機 .env 中設定。"
-        )
+    key = (api_key or "").strip() or DEEPSEEK_API_KEY
+    if not key:
+        raise RuntimeError("尚未填入 DeepSeek API Key，請點右上角「API 設定」輸入後再試。")
 
     payload = {
         "model": DEEPSEEK_MODEL,
@@ -299,7 +299,7 @@ def call_deepseek(messages: list, temperature: float = 0.3, max_tokens: int | No
     resp = http_requests.post(
         DEEPSEEK_BASE_URL.rstrip("/") + "/chat/completions",
         headers={
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
         },
         json=payload,
@@ -312,7 +312,7 @@ def call_deepseek(messages: list, temperature: float = 0.3, max_tokens: int | No
     return resp.json()["choices"][0]["message"]["content"].strip()
 
 
-def organize_meeting_notes(transcript: str) -> str:
+def organize_meeting_notes(transcript: str, api_key: str | None = None) -> str:
     """Use DeepSeek API to turn a raw transcript into structured meeting notes (Markdown)."""
     today = datetime.now().strftime("%Y-%m-%d")
     prompt = f"""你是一位專業的會議記錄整理助理。以下是一段會議錄音的逐字稿，請把它整理成一份清楚、專業的「會議記錄」。
@@ -352,6 +352,7 @@ def organize_meeting_notes(transcript: str) -> str:
             {"role": "user", "content": prompt},
         ],
         temperature=0.3,
+        api_key=api_key,
     )
     return _strip_code_fence(content)
 
@@ -422,7 +423,7 @@ def meeting_organize():
     if not text:
         return jsonify({"error": "缺少逐字稿內容"}), 400
     try:
-        notes = organize_meeting_notes(text)
+        notes = organize_meeting_notes(text, api_key=(data or {}).get("api_key"))
         return jsonify({"notes": notes})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -579,7 +580,7 @@ PLATFORM_LABELS = {
 }
 
 
-def process_ad_report_with_ai(report_info: dict) -> dict:
+def process_ad_report_with_ai(report_info: dict, api_key: str | None = None) -> dict:
     """Use DeepSeek to generate an ad monthly report from platform data (incl. CSV exports)."""
     client_name = report_info.get("client_name", "")
     company_name = report_info.get("company_name", "")
@@ -683,6 +684,7 @@ def process_ad_report_with_ai(report_info: dict) -> dict:
         ],
         temperature=0.4,
         max_tokens=8192,
+        api_key=api_key,
     )
     return json.loads(_strip_code_fence(content))
 
@@ -768,7 +770,7 @@ def process_ad_report():
         return jsonify({"error": "請至少輸入一個平台的數據"}), 400
 
     try:
-        result = process_ad_report_with_ai(data)
+        result = process_ad_report_with_ai(data, api_key=data.get("api_key"))
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -786,7 +788,8 @@ DEFAULT_ROLES = [
 ]
 
 
-def process_work_dispatch_with_ai(quotation_text: str, team_roles: list, project_name: str) -> dict:
+def process_work_dispatch_with_ai(quotation_text: str, team_roles: list, project_name: str,
+                                  api_key: str | None = None) -> dict:
     """Use DeepSeek to break a quotation into work packages assigned to team roles."""
     roles_desc = "\n".join(
         f"- **{r['name']}** ({r['id']}): {r['desc']}" for r in team_roles
@@ -855,6 +858,7 @@ def process_work_dispatch_with_ai(quotation_text: str, team_roles: list, project
         ],
         temperature=0.3,
         max_tokens=8192,
+        api_key=api_key,
     )
     return json.loads(_strip_code_fence(content))
 
@@ -947,6 +951,7 @@ def process_work_dispatch():
             data["quotation_text"],
             data["roles"],
             data.get("project_name", "未命名專案"),
+            api_key=data.get("api_key"),
         )
         return jsonify(result)
     except Exception as e:

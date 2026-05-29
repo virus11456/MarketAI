@@ -175,11 +175,17 @@ async function wdStartProcessing() {
     showToast('請至少選擇一個團隊角色', 'error');
     return;
   }
+  if (!getDeepSeekKey()) {
+    showToast('請先點右上角「API 設定」填入 DeepSeek API Key', 'error');
+    toggleApiSettings();
+    return;
+  }
 
   const payload = {
     project_name: document.getElementById('wd-project-name').value.trim(),
     quotation_text: wdQuotationText,
-    roles: selectedRoles
+    roles: selectedRoles,
+    api_key: getDeepSeekKey()
   };
 
   wdSetStep(3);

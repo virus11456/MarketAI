@@ -171,13 +171,18 @@ async function organizeNotes() {
     showToast('沒有可整理的逐字稿', 'error');
     return;
   }
+  if (!getDeepSeekKey()) {
+    showToast('請先點右上角「API 設定」填入 DeepSeek API Key', 'error');
+    toggleApiSettings();
+    return;
+  }
 
   showLoading('DeepSeek 正在整理會議記錄...');
   try {
     const res = await fetch('/api/meeting/organize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text })
+      body: JSON.stringify({ text, api_key: getDeepSeekKey() })
     });
     const data = await res.json();
     if (data.error) {

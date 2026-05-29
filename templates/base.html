@@ -5,6 +5,35 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}MarketAI{% endblock %}</title>
   <link rel="stylesheet" href="/static/css/admin.css">
+  <style>
+    .topbar-right { display: flex; align-items: center; gap: 10px; }
+    .api-settings-btn {
+      background: none; border: 1px solid var(--border, #e2e2e2);
+      border-radius: 8px; padding: 6px 12px; font-size: 0.82rem;
+      cursor: pointer; color: var(--text, #333);
+    }
+    .api-settings-btn:hover { background: var(--bg, #f5f5f5); }
+    .topbar-badge.ready { background: var(--success-light, #e6f7ed); color: var(--success, #1a9e54); }
+    .api-settings-panel {
+      display: none; position: absolute; right: 24px; top: 60px; z-index: 50;
+      width: 340px; max-width: calc(100vw - 32px);
+      background: var(--card, #fff); border: 1px solid var(--border, #e2e2e2);
+      border-radius: 12px; padding: 16px; box-shadow: 0 8px 30px rgba(0,0,0,.12);
+    }
+    .api-settings-panel.show { display: block; }
+    .api-settings-panel label { display: block; font-size: 0.82rem; font-weight: 600; margin-bottom: 8px; }
+    .api-settings-row { display: flex; gap: 8px; }
+    .api-settings-row input {
+      flex: 1; padding: 8px 12px; border: 1px solid var(--border, #e2e2e2);
+      border-radius: 8px; font-size: 0.85rem;
+    }
+    .btn-save-key {
+      background: var(--primary, #6d4cff); color: #fff; border: none;
+      border-radius: 8px; padding: 8px 16px; font-size: 0.85rem; cursor: pointer;
+    }
+    .api-settings-hint { font-size: 0.75rem; color: var(--text-muted, #888); margin-top: 10px; line-height: 1.5; }
+    .api-settings-status { font-size: 0.8rem; color: var(--success, #1a9e54); }
+  </style>
   {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -54,9 +83,21 @@
     </button>
     <h1 class="topbar-title">{% block page_title %}儀表板{% endblock %}</h1>
     <div class="topbar-right">
-      <span class="topbar-badge">AI Ready</span>
+      <button type="button" class="api-settings-btn" onclick="toggleApiSettings()">⚙️ API 設定</button>
+      <span class="topbar-badge" id="api-badge">需設定 Key</span>
     </div>
   </header>
+
+  <!-- API Settings Panel -->
+  <div class="api-settings-panel" id="api-settings-panel">
+    <label for="deepseek-key-input">DeepSeek API Key</label>
+    <div class="api-settings-row">
+      <input type="password" id="deepseek-key-input" placeholder="sk-...">
+      <button type="button" class="btn-save-key" onclick="saveDeepSeekKey()">儲存</button>
+    </div>
+    <p class="api-settings-hint">用於會議記錄整理、工作包拆分、廣告月報。只會存在這台瀏覽器（localStorage），不會上傳或寫入程式碼。</p>
+    <span class="api-settings-status" id="deepseek-key-status"></span>
+  </div>
 
   <!-- Page Content -->
   <main class="page-content">
@@ -78,6 +119,39 @@ function toggleSidebar() {
   document.getElementById('sidebar').classList.toggle('collapsed');
   document.querySelector('.main-wrapper').classList.toggle('expanded');
 }
+
+// --- DeepSeek API Key (manual, stored in this browser only) ---
+function getDeepSeekKey() {
+  return (localStorage.getItem('marketai_deepseek_key') || '').trim();
+}
+function updateApiBadge() {
+  const badge = document.getElementById('api-badge');
+  if (!badge) return;
+  if (getDeepSeekKey()) {
+    badge.textContent = 'AI Ready';
+    badge.classList.add('ready');
+  } else {
+    badge.textContent = '需設定 Key';
+    badge.classList.remove('ready');
+  }
+}
+function toggleApiSettings() {
+  const panel = document.getElementById('api-settings-panel');
+  const showing = panel.classList.toggle('show');
+  if (showing) {
+    const input = document.getElementById('deepseek-key-input');
+    if (input) input.value = getDeepSeekKey();
+  }
+}
+function saveDeepSeekKey() {
+  const val = document.getElementById('deepseek-key-input').value.trim();
+  localStorage.setItem('marketai_deepseek_key', val);
+  const status = document.getElementById('deepseek-key-status');
+  if (status) status.textContent = val ? '已儲存 ✓' : '已清除';
+  updateApiBadge();
+  if (val) setTimeout(() => document.getElementById('api-settings-panel').classList.remove('show'), 800);
+}
+document.addEventListener('DOMContentLoaded', updateApiBadge);
 function showLoading(msg) {
   document.getElementById('loading').classList.add('show');
   document.getElementById('loading-step').textContent = msg || '處理中...';
