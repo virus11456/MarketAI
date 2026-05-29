@@ -57,30 +57,38 @@ async function handleFileSelect(file) {
     return;
   }
 
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('initial_prompt', document.getElementById('initial-prompt').value);
-  if (groqKey) formData.append('groq_key', groqKey);
-  if (colabUrl) formData.append('colab_url', colabUrl);
-
-  showLoading(groqKey
-    ? '透過 Groq Whisper 轉錄中（large-v3），長音檔請耐心等候...'
-    : '透過 Google Colab GPU 轉錄中（large-v3），長音檔請耐心等候...');
+  const initialPrompt = document.getElementById('initial-prompt').value;
 
   try {
-    const res = await fetch('/api/upload', { method: 'POST', body: formData });
-    const data = await res.json();
-
-    if (data.error) {
-      showToast(data.error, 'error');
-      removeFile();
-      return;
+    let result;
+    if (groqKey) {
+      // 直接從瀏覽器呼叫 Groq，繞過 Vercel 4.5MB 請求上限（Groq 上限 25MB）
+      showLoading('透過 Groq Whisper 轉錄中（large-v3），長音檔請耐心等候...');
+      result = await transcribeWithGroq(file, groqKey, initialPrompt);
+    } else {
+      // 備援：經後端轉發到 Colab
+      showLoading('透過 Google Colab GPU 轉錄中（large-v3），長音檔請耐心等候...');
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('initial_prompt', initialPrompt);
+      formData.append('colab_url', colabUrl);
+      const res = await fetch('/api/upload', { method: 'POST', body: formData });
+      const raw = await res.text();
+      let data;
+      try { data = JSON.parse(raw); }
+      catch (_) {
+        throw new Error(res.status === 413
+          ? '檔案太大（Colab 經後端轉發有 4.5MB 限制），建議改用 Groq'
+          : `伺服器回應異常（HTTP ${res.status}）`);
+      }
+      if (data.error) { showToast(data.error, 'error'); removeFile(); return; }
+      result = data;
     }
 
-    meetingText = data.text;
-    uploadedFilename = data.filename;
-    transcriptTimestamped = data.timestamped || '';
-    transcriptSegments = data.segments || [];
+    meetingText = result.text;
+    uploadedFilename = result.filename || file.name;
+    transcriptTimestamped = result.timestamped || '';
+    transcriptSegments = result.segments || [];
 
     // Show transcription preview
     document.getElementById('transcription-preview').style.display = 'block';
@@ -98,11 +106,49 @@ async function handleFileSelect(file) {
     setStep(2);
     showToast('語音轉文字完成！', 'success');
   } catch (err) {
-    showToast('檔案上傳失敗：' + err.message, 'error');
+    showToast('檔案上傳失敗：' + (err.message || err), 'error');
     removeFile();
   } finally {
     hideLoading();
   }
+}
+
+// 瀏覽器直接呼叫 Groq Whisper（OpenAI 相容），回傳 {text, timestamped, segments}
+async function transcribeWithGroq(file, groqKey, initialPrompt) {
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('model', 'whisper-large-v3');
+  fd.append('language', 'zh');
+  fd.append('response_format', 'verbose_json');
+  if (initialPrompt) fd.append('prompt', initialPrompt);
+
+  const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + groqKey },
+    body: fd
+  });
+
+  const raw = await res.text();
+  let data;
+  try { data = JSON.parse(raw); }
+  catch (_) { throw new Error(`Groq 回應異常（HTTP ${res.status}）`); }
+
+  if (!res.ok) {
+    const msg = (data.error && (data.error.message || data.error)) || ('HTTP ' + res.status);
+    throw new Error('Groq：' + msg);
+  }
+
+  const segments = (data.segments || []).map(s => ({
+    start: s.start || 0, end: s.end || 0, text: (s.text || '').trim()
+  }));
+  const timestamped = segments.map(s => {
+    const t = Math.floor(s.start);
+    const mm = String(Math.floor(t / 60)).padStart(2, '0');
+    const ss = String(t % 60).padStart(2, '0');
+    return `[${mm}:${ss}] ${s.text}`;
+  }).join('\n');
+
+  return { text: data.text || '', timestamped, segments };
 }
 
 function removeFile() {
