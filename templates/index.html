@@ -33,9 +33,9 @@
             <div class="colab-steps">
               <strong>怎麼取得轉錄網址：</strong>
               <ol>
-                <li>打開 <a href="https://colab.research.google.com/drive/1WEF7aEny9olSGP34H9Voc03aC1WJ9Wpn" target="_blank" rel="noopener">Colab Whisper Notebook ↗</a></li>
+                <li><button type="button" class="btn-link-colab" onclick="openColabPopup()">🚀 開啟 Colab Whisper（彈出視窗）</button></li>
                 <li>設好 ngrok token 後，點選單列「執行階段 → 全部執行」</li>
-                <li>複製它印出的 <code>https://xxxx.ngrok-free.app</code> 網址，貼到下方</li>
+                <li>複製它印出的 <code>https://xxxx.ngrok-free.app</code> 網址，貼到下方並按「測試連線」</li>
               </ol>
             </div>
             <div class="colab-row">
@@ -202,6 +202,18 @@
   color: var(--primary, #6d4cff);
   font-weight: 600;
 }
+
+.btn-link-colab {
+  background: var(--primary, #6d4cff);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-link-colab:hover { opacity: 0.9; }
 
 .colab-steps code {
   background: var(--card, #fff);

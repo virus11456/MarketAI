@@ -318,6 +318,27 @@ function updateLoadingStep(msg) {
   if (el) el.textContent = msg;
 }
 
+// --- Open Colab in a popup window (not a new tab; stays beside the app) ---
+const COLAB_NOTEBOOK_URL = 'https://colab.research.google.com/drive/1WEF7aEny9olSGP34H9Voc03aC1WJ9Wpn';
+function openColabPopup() {
+  const w = Math.min(1100, Math.floor(window.screen.availWidth * 0.7));
+  const h = Math.min(900, Math.floor(window.screen.availHeight * 0.85));
+  const left = window.screenX + (window.outerWidth - w) / 2;
+  const top = window.screenY + (window.outerHeight - h) / 2;
+  const popup = window.open(
+    COLAB_NOTEBOOK_URL,
+    'colab_whisper',
+    `popup=yes,width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes`
+  );
+  if (!popup) {
+    // Popup blocked — fall back to a new tab
+    window.open(COLAB_NOTEBOOK_URL, '_blank', 'noopener');
+    showToast('瀏覽器擋了彈出視窗，已改用新分頁開啟', 'error');
+  } else {
+    popup.focus();
+  }
+}
+
 // --- Colab Connection Test ---
 async function testColabConnection() {
   const url = document.getElementById('colab-url').value.trim();
