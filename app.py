@@ -114,11 +114,17 @@ def read_text_file(file_path: str) -> str:
                 if line:
                     parts.append(line)
         return "\n".join(parts)
+    elif ext == ".doc":
+        # 舊版 Word .doc 二進位格式，python-docx 不支援
+        raise ValueError("不支援舊版 .doc 格式，請另存為 .docx 或 PDF 後再上傳。")
     elif ext == ".pdf":
         from pypdf import PdfReader
 
         reader = PdfReader(file_path)
-        return "\n".join((page.extract_text() or "") for page in reader.pages)
+        text = "\n".join((page.extract_text() or "") for page in reader.pages)
+        if not text.strip():
+            raise ValueError("無法從這個 PDF 擷取文字，可能是掃描影像或圖片型 PDF。請改用文字型 PDF 或 Word 檔。")
+        return text
     elif ext == ".csv":
         import csv
 
@@ -144,7 +150,7 @@ def read_text_file(file_path: str) -> str:
         wb.close()
         return "\n".join(lines)
     else:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
             return f.read()
 
 
