@@ -1,6 +1,6 @@
 // State
 let arReportResult = null;
-const activePlatforms = new Set(['meta']);
+const activePlatforms = new Set(['meta', 'google']);
 
 const PLATFORM_CONFIG = {
   meta: { icon: '📘', label: 'Meta (Facebook / Instagram)', placeholder: '從 Meta 廣告後台複製數據貼在這裡...\n\n例如：\n廣告活動：品牌知名度 Q1\n花費：NT$ 150,000\n曝光：1,200,000\n點擊：45,000\nCTR：3.75%\nCPC：NT$ 3.33\n轉換：850\nCPA：NT$ 176.47\n\n或直接貼上從後台匯出的報表數據...' },
@@ -10,33 +10,23 @@ const PLATFORM_CONFIG = {
 };
 
 // --- Step Navigation ---
+// Steps in the UI: 1 填寫資料, 3 AI 產出月報, 4 檢視與匯出
 function arSetStep(num) {
-  for (let i = 1; i <= 4; i++) {
+  [1, 3, 4].forEach(i => {
     const el = document.getElementById(`ar-step${i}`);
+    if (!el) return;
     el.classList.remove('active', 'done');
     if (i < num) el.classList.add('done');
     if (i === num) el.classList.add('active');
-  }
+  });
 }
 
 function arGoToStep(num) {
-  // Validation
-  if (num === 2) {
-    const client = document.getElementById('client-name').value.trim();
-    const company = document.getElementById('company-name').value.trim();
-    const month = document.getElementById('report-month').value;
-    if (!client || !company || !month) {
-      showToast('請填寫所有基本資訊', 'error');
-      return;
-    }
-  }
-
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   arSetStep(num);
 
   const sectionMap = {
     1: 'ar-section-info',
-    2: 'ar-section-platforms',
     4: 'ar-section-results'
   };
 
@@ -78,22 +68,22 @@ function addPlatformPanel(platform) {
         <button class="btn-icon" onclick="removePlatformPanel('${platform}')" title="移除">✕</button>
       </div>
       <div class="input-toggle" style="margin-bottom:12px;">
-        <button class="active" onclick="togglePanelInput(this, '${platform}', 'paste')">貼上數據</button>
-        <button onclick="togglePanelInput(this, '${platform}', 'upload')">上傳檔案</button>
+        <button class="active" onclick="togglePanelInput(this, '${platform}', 'upload')">上傳檔案</button>
+        <button onclick="togglePanelInput(this, '${platform}', 'paste')">貼上數據</button>
       </div>
-      <div class="panel-input-paste" id="${platform}-paste">
-        <textarea class="text-input platform-data" data-platform="${platform}"
-          placeholder="${config.placeholder}"></textarea>
-      </div>
-      <div class="panel-input-upload" id="${platform}-upload" style="display:none;">
+      <div class="panel-input-upload" id="${platform}-upload">
         <div class="upload-zone mini-upload">
           <input type="file" accept=".csv,.xlsx,.xls,.txt" onchange="handlePlatformFile(this, '${platform}')">
-          <p><strong>上傳 CSV / Excel 報表</strong></p>
+          <p><strong>上傳 ${config.label} 後台匯出的 CSV / Excel</strong></p>
         </div>
         <div class="file-info" id="${platform}-file-info" style="display:none;">
           <span>📎</span>
           <span class="file-name" id="${platform}-file-name"></span>
         </div>
+      </div>
+      <div class="panel-input-paste" id="${platform}-paste" style="display:none;">
+        <textarea class="text-input platform-data" data-platform="${platform}"
+          placeholder="${config.placeholder}"></textarea>
       </div>
     </div>`;
 
@@ -182,6 +172,15 @@ async function handlePlatformFile(input, platform) {
 
 // --- Processing ---
 async function arStartProcessing() {
+  // Validate basic info (now on the same page)
+  const client = document.getElementById('client-name').value.trim();
+  const company = document.getElementById('company-name').value.trim();
+  const month = document.getElementById('report-month').value;
+  if (!client || !company || !month) {
+    showToast('請填寫客戶名稱、公司名稱與報告月份', 'error');
+    return;
+  }
+
   // Collect data
   const platformsData = {};
   let hasData = false;
@@ -225,7 +224,7 @@ async function arStartProcessing() {
     const data = await res.json();
     if (data.error) {
       showToast(data.error, 'error');
-      arGoToStep(2);
+      arGoToStep(1);
       return;
     }
 
@@ -235,7 +234,7 @@ async function arStartProcessing() {
     showToast('月報產出完成！', 'success');
   } catch (err) {
     showToast('處理失敗：' + err.message, 'error');
-    arGoToStep(2);
+    arGoToStep(1);
   } finally {
     hideLoading();
   }
@@ -391,11 +390,16 @@ function showToast(msg, type) {
   setTimeout(() => toast.remove(), 3000);
 }
 
-// --- Init: set default month ---
+// --- Init: set default month + render pre-selected platform panels ---
 document.addEventListener('DOMContentLoaded', () => {
   const monthInput = document.getElementById('report-month');
   const now = new Date();
   // Default to last month
   now.setMonth(now.getMonth() - 1);
   monthInput.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+  // Render panels for platforms selected by default in the markup
+  document.querySelectorAll('.platform-chip.selected[data-platform]').forEach(chip => {
+    addPlatformPanel(chip.dataset.platform);
+  });
 });
