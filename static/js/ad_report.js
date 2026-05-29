@@ -198,12 +198,18 @@ async function arStartProcessing() {
     showToast('請至少輸入一個平台的數據', 'error');
     return;
   }
+  if (!getDeepSeekKey()) {
+    showToast('請先點右上角「API 設定」填入 DeepSeek API Key', 'error');
+    toggleApiSettings();
+    return;
+  }
 
   const payload = {
     client_name: document.getElementById('client-name').value.trim(),
     company_name: document.getElementById('company-name').value.trim(),
     report_month: document.getElementById('report-month').value,
-    platforms: platformsData
+    platforms: platformsData,
+    api_key: getDeepSeekKey()
   };
 
   arSetStep(3);

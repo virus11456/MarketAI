@@ -9,7 +9,6 @@ import requests as http_requests
 from flask import Flask, render_template, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
-import anthropic
 
 load_dotenv()
 
@@ -25,7 +24,6 @@ else:
     UPLOAD_FOLDER = Path(__file__).parent / "uploads"
     OUTPUT_FOLDER = Path(__file__).parent / "outputs"
 
-TEMPLATE_FOLDER = Path(__file__).parent / "company_templates"
 
 UPLOAD_FOLDER.mkdir(exist_ok=True)
 OUTPUT_FOLDER.mkdir(exist_ok=True)
@@ -36,18 +34,11 @@ ALLOWED_EXTENSIONS = ALLOWED_TEXT_EXT | ALLOWED_AUDIO_EXT
 
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB
 
-ANTHROPIC_BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
 
-
-def get_ai_client():
-    return anthropic.Anthropic(base_url=ANTHROPIC_BASE_URL)
-
-
-def load_template(template_type: str) -> dict:
-    path = TEMPLATE_FOLDER / f"{template_type}.json"
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+# DeepSeek (OpenAI-compatible) — 用於把逐字稿整理成會議記錄
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
 
 def transcribe_audio_remote(file_path: str, colab_url: str, initial_prompt: str = "") -> dict:
@@ -114,7 +105,20 @@ def read_text_file(file_path: str) -> str:
         from docx import Document
 
         doc = Document(file_path)
-        return "\n".join(p.text for p in doc.paragraphs)
+        parts = [p.text for p in doc.paragraphs if p.text.strip()]
+        # 報價單內容多半在表格裡，需一併讀出
+        for table in doc.tables:
+            for row in table.rows:
+                cells = [c.text.strip() for c in row.cells]
+                line = " | ".join(c for c in cells if c)
+                if line:
+                    parts.append(line)
+        return "\n".join(parts)
+    elif ext == ".pdf":
+        from pypdf import PdfReader
+
+        reader = PdfReader(file_path)
+        return "\n".join((page.extract_text() or "") for page in reader.pages)
     elif ext == ".csv":
         import csv
 
@@ -122,7 +126,8 @@ def read_text_file(file_path: str) -> str:
         with open(file_path, "r", encoding="utf-8-sig") as f:
             reader = csv.reader(f)
             for row in reader:
-                rows.append(",".join(row))
+                # 用 | 分隔欄位，避免值內含千分位逗號（如 "142,478"）造成欄位錯位
+                rows.append(" | ".join(cell.strip() for cell in row))
         return "\n".join(rows)
     elif ext in (".xlsx", ".xls"):
         from openpyxl import load_workbook
@@ -143,108 +148,128 @@ def read_text_file(file_path: str) -> str:
             return f.read()
 
 
-def process_with_ai(meeting_text: str, template_type: str) -> dict:
-    """Use Claude API to process meeting notes into structured output."""
-    client = get_ai_client()
-    template = load_template(template_type)
+def _strip_code_fence(content: str) -> str:
+    """Remove a leading/trailing Markdown code fence if the model wrapped its output."""
+    content = content.strip()
+    if content.startswith("```"):
+        lines = content.split("\n")
+        content = "\n".join(lines[1:])
+        if content.rstrip().endswith("```"):
+            content = content.rstrip()[:-3].strip()
+    return content
 
-    sections_desc = "\n".join(
-        f"### {s['title']}\n{s['description']}" for s in template["sections"]
+
+def call_deepseek(messages: list, temperature: float = 0.3, max_tokens: int | None = None,
+                  api_key: str | None = None) -> str:
+    """Call the DeepSeek (OpenAI-compatible) chat completions API and return the text content."""
+    key = (api_key or "").strip() or DEEPSEEK_API_KEY
+    if not key:
+        raise RuntimeError("尚未填入 DeepSeek API Key，請點右上角「API 設定」輸入後再試。")
+
+    payload = {
+        "model": DEEPSEEK_MODEL,
+        "messages": messages,
+        "temperature": temperature,
+        "stream": False,
+    }
+    if max_tokens:
+        payload["max_tokens"] = max_tokens
+
+    resp = http_requests.post(
+        DEEPSEEK_BASE_URL.rstrip("/") + "/chat/completions",
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=300,
     )
 
-    type_labels = {
-        "research": "市場研究報告",
-        "proposal": "行銷提案書",
-        "quotation": "專案報價單",
-    }
+    if resp.status_code != 200:
+        raise RuntimeError(f"DeepSeek API 錯誤（{resp.status_code}）：{resp.text[:300]}")
 
-    prompt = f"""你是一位資深行銷顧問。根據以下會議記錄，產出一份「{type_labels[template_type]}」。
+    return resp.json()["choices"][0]["message"]["content"].strip()
 
-請嚴格按照以下格式架構來整理內容：
 
-{sections_desc}
+def organize_meeting_notes(transcript: str, api_key: str | None = None) -> str:
+    """Use DeepSeek API to turn a raw transcript into structured meeting notes (Markdown)."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    prompt = f"""你是一位專業的會議記錄整理助理。以下是一段會議錄音的逐字稿，請把它整理成一份清楚、專業的「會議記錄」。
 
-## 會議記錄內容：
-{meeting_text}
+## 逐字稿內容：
+{transcript}
 
 ## 輸出要求：
-1. 使用繁體中文
-2. 請以 JSON 格式回覆，格式如下：
-{{
-  "title": "文件標題",
-  "date": "產出日期",
-  "sections": [
-    {{
-      "title": "段落標題",
-      "content": "段落內容（支援 Markdown 格式）"
-    }}
-  ]
-}}
-3. 內容要專業、具體、可執行
-4. 從會議記錄中提取所有相關資訊，不要遺漏重要細節
-5. 如果會議記錄中資訊不足，請在該段落標註「[待補充]」
-6. 報價單的服務項目明細請用表格呈現
+1. 全程使用繁體中文。
+2. 直接輸出 Markdown 格式的會議記錄，不要加任何開場白或結語、不要用程式碼區塊包起來。
+3. 請依照以下結構整理（若逐字稿中沒有相關資訊，該欄位可留「（未提及）」）：
 
-請直接回覆 JSON，不要加任何其他文字。"""
+# 會議記錄
 
-    message = client.messages.create(
-        model=ANTHROPIC_MODEL,
-        max_tokens=4096,
-        messages=[{"role": "user", "content": prompt}],
+**會議主題：** （依內容推斷）
+**會議日期：** （逐字稿中有提到就用，否則填 {today}）
+**與會人員：** （依內容推斷，逐字稿沒有就寫「未提及」）
+
+## 會議摘要
+（用 3-5 句話總結整場會議重點）
+
+## 討論事項
+（依主題分點條列，每個議題說明討論內容與結論）
+
+## 決議事項
+（條列本次會議確定的決定）
+
+## 待辦事項 (Action Items)
+（用表格呈現，欄位：項目 / 負責人 / 預計完成時間。若無負責人或時間填「待定」）
+
+4. 內容要忠於逐字稿，不要虛構不存在的資訊；可以適度潤飾語句讓記錄更通順。
+"""
+
+    content = call_deepseek(
+        [
+            {"role": "system", "content": "你是一位專業、嚴謹的會議記錄整理助理。"},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.3,
+        api_key=api_key,
     )
-
-    response_text = message.content[0].text.strip()
-    # Remove markdown code block wrapper if present
-    if response_text.startswith("```"):
-        lines = response_text.split("\n")
-        response_text = "\n".join(lines[1:])
-        if response_text.endswith("```"):
-            response_text = response_text[:-3].strip()
-
-    return json.loads(response_text)
+    return _strip_code_fence(content)
 
 
-def generate_docx(result: dict, template_type: str) -> str:
-    """Generate a .docx file from the AI result."""
+def generate_markdown_docx(markdown_text: str, title: str = "會議記錄") -> str:
+    """Generate a .docx file from a Markdown string (used for meeting notes)."""
     from docx import Document
-    from docx.shared import Pt, Inches, RGBColor
     from docx.enum.text import WD_ALIGN_PARAGRAPH
 
     doc = Document()
 
-    # Title
-    title_para = doc.add_heading(result["title"], level=0)
-    title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    in_table = False
+    for raw_line in markdown_text.split("\n"):
+        line = raw_line.strip()
+        if not line:
+            in_table = False
+            continue
 
-    # Date
-    date_para = doc.add_paragraph(f"日期：{result.get('date', datetime.now().strftime('%Y-%m-%d'))}")
-    date_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-
-    doc.add_paragraph("")  # spacer
-
-    # Sections
-    for section in result["sections"]:
-        doc.add_heading(section["title"], level=1)
-
-        content = section["content"]
-        for line in content.split("\n"):
-            line = line.strip()
-            if not line:
+        if line.startswith("# "):
+            heading = doc.add_heading(line[2:].strip(), level=0)
+            heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        elif line.startswith("## "):
+            doc.add_heading(line[3:].strip(), level=1)
+        elif line.startswith("### "):
+            doc.add_heading(line[4:].strip(), level=2)
+        elif line.startswith("|") and line.endswith("|"):
+            # Skip Markdown table separator rows
+            if line.replace("|", "").replace("-", "").replace(":", "").replace(" ", "") == "":
                 continue
-            if line.startswith("| "):
-                # Table row - simplified handling
-                doc.add_paragraph(line, style="List Bullet")
-            elif line.startswith("- ") or line.startswith("* "):
-                doc.add_paragraph(line[2:], style="List Bullet")
-            elif line.startswith("## "):
-                doc.add_heading(line[3:], level=2)
-            elif line.startswith("### "):
-                doc.add_heading(line[4:], level=3)
-            else:
-                doc.add_paragraph(line)
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            doc.add_paragraph("  |  ".join(cells))
+            in_table = True
+        elif line.startswith("- ") or line.startswith("* "):
+            doc.add_paragraph(line[2:].strip(), style="List Bullet")
+        else:
+            doc.add_paragraph(line)
 
-    # Save
-    filename = f"{template_type}_{uuid.uuid4().hex[:8]}.docx"
+    filename = f"meeting_notes_{uuid.uuid4().hex[:8]}.docx"
     output_path = OUTPUT_FOLDER / filename
     doc.save(str(output_path))
     return filename
@@ -268,6 +293,33 @@ def ad_report():
 @app.route("/work-dispatch")
 def work_dispatch():
     return render_template("work_dispatch.html", active_page="work_dispatch")
+
+
+@app.route("/api/meeting/organize", methods=["POST"])
+def meeting_organize():
+    data = request.get_json()
+    text = (data or {}).get("text", "").strip()
+    if not text:
+        return jsonify({"error": "缺少逐字稿內容"}), 400
+    try:
+        notes = organize_meeting_notes(text, api_key=(data or {}).get("api_key"))
+        return jsonify({"notes": notes})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/meeting/export", methods=["POST"])
+def meeting_export():
+    data = request.get_json()
+    notes = (data or {}).get("notes", "").strip()
+    title = (data or {}).get("title", "會議記錄")
+    if not notes:
+        return jsonify({"error": "缺少會議記錄內容"}), 400
+    try:
+        filename = generate_markdown_docx(notes, title)
+        return jsonify({"filename": filename})
+    except Exception as e:
+        return jsonify({"error": f"匯出失敗：{str(e)}"}), 500
 
 
 @app.route("/api/colab-health", methods=["POST"])
@@ -332,70 +384,12 @@ def upload_file():
         return jsonify({"error": f"檔案處理失敗：{str(e)}"}), 500
 
 
-@app.route("/api/process", methods=["POST"])
-def process_meeting():
-    data = request.get_json()
-    if not data or "text" not in data:
-        return jsonify({"error": "缺少會議記錄內容"}), 400
-
-    text = data["text"]
-    doc_types = data.get("types", ["research", "proposal", "quotation"])
-
-    results = {}
-    for doc_type in doc_types:
-        try:
-            result = process_with_ai(text, doc_type)
-            results[doc_type] = result
-        except Exception as e:
-            results[doc_type] = {"error": str(e)}
-
-    return jsonify(results)
-
-
-@app.route("/api/export/<doc_type>", methods=["POST"])
-def export_document(doc_type):
-    if doc_type not in ("research", "proposal", "quotation"):
-        return jsonify({"error": "無效的文件類型"}), 400
-
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "缺少文件資料"}), 400
-
-    try:
-        filename = generate_docx(data, doc_type)
-        return jsonify({"filename": filename})
-    except Exception as e:
-        return jsonify({"error": f"匯出失敗：{str(e)}"}), 500
-
-
 @app.route("/api/download/<filename>")
 def download_file(filename):
     file_path = OUTPUT_FOLDER / secure_filename(filename)
     if not file_path.exists():
         return jsonify({"error": "檔案不存在"}), 404
     return send_file(str(file_path), as_attachment=True)
-
-
-@app.route("/api/templates", methods=["GET"])
-def get_templates():
-    templates = {}
-    for tpl_file in TEMPLATE_FOLDER.glob("*.json"):
-        with open(tpl_file, "r", encoding="utf-8") as f:
-            templates[tpl_file.stem] = json.load(f)
-    return jsonify(templates)
-
-
-@app.route("/api/templates/<template_type>", methods=["PUT"])
-def update_template(template_type):
-    if template_type not in ("research", "proposal", "quotation"):
-        return jsonify({"error": "無效的模板類型"}), 400
-
-    data = request.get_json()
-    path = TEMPLATE_FOLDER / f"{template_type}.json"
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-    return jsonify({"message": "模板已更新"})
 
 
 PLATFORM_ORDER = ["meta", "google", "line", "tiktok"]
@@ -407,10 +401,8 @@ PLATFORM_LABELS = {
 }
 
 
-def process_ad_report_with_ai(report_info: dict) -> dict:
-    """Use Claude API to generate ad monthly report."""
-    client = get_ai_client()
-
+def process_ad_report_with_ai(report_info: dict, api_key: str | None = None) -> dict:
+    """Use DeepSeek to generate an ad monthly report from platform data (incl. CSV exports)."""
     client_name = report_info.get("client_name", "")
     company_name = report_info.get("company_name", "")
     report_month = report_info.get("report_month", "")
@@ -453,6 +445,12 @@ def process_ad_report_with_ai(report_info: dict) -> dict:
 
 ## 各平台廣告數據：
 {platforms_text}
+
+## 數據格式說明（資料可能直接來自各平台後台匯出的 CSV，欄位以「 | 」分隔）：
+- **Google Ads**：開頭可能有「廣告活動報表」「日期區間」等抬頭列；含「總計：…」彙總列（總計列可作為平台整體數據）。常見欄位對應：費用＝花費、曝光、互動/點擊、點閱率＝CTR、轉換、單次轉換費用＝CPA、轉換價值、「轉換價值/費用」＝ROAS、貨幣代碼為 TWD。請以非總計的各「廣告活動」列做活動別表格。
+- **Meta（Facebook / Instagram）**：每列為一個「廣告組合」。常見欄位對應：「花費金額 (TWD)」＝花費、曝光次數、觸及人數、連結點擊次數、成果（其意義依「成果指標」欄而定，例如 messaging_conversation_started 為訊息對話數）、每次成果成本＝CPA、廣告組合名稱常含受眾資訊（如「年齡 : 45y-65y+」「興趣受眾 : 個人護理」可作為受眾洞察）。
+- 指標若原始數據沒有，請以公式計算：CTR＝點擊/曝光、CPC＝花費/點擊、CPM＝花費/曝光×1000、CPA＝花費/成果、ROAS＝轉換價值/花費。計算後請標示為「(推算)」。
+- 金額數字可能含千分位逗號（如 142,478），請正確解讀為數值。
 
 ## 月報架構（請嚴格按照以下順序）：
 
@@ -500,20 +498,16 @@ def process_ad_report_with_ai(report_info: dict) -> dict:
 
 請直接回覆 JSON，不要加任何其他文字。"""
 
-    message = client.messages.create(
-        model=ANTHROPIC_MODEL,
+    content = call_deepseek(
+        [
+            {"role": "system", "content": "你是一位資深數位廣告顧問，只會回覆合法 JSON。"},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.4,
         max_tokens=8192,
-        messages=[{"role": "user", "content": prompt}],
+        api_key=api_key,
     )
-
-    response_text = message.content[0].text.strip()
-    if response_text.startswith("```"):
-        lines = response_text.split("\n")
-        response_text = "\n".join(lines[1:])
-        if response_text.endswith("```"):
-            response_text = response_text[:-3].strip()
-
-    return json.loads(response_text)
+    return json.loads(_strip_code_fence(content))
 
 
 def generate_ad_report_docx(result: dict) -> str:
@@ -597,7 +591,7 @@ def process_ad_report():
         return jsonify({"error": "請至少輸入一個平台的數據"}), 400
 
     try:
-        result = process_ad_report_with_ai(data)
+        result = process_ad_report_with_ai(data, api_key=data.get("api_key"))
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -615,27 +609,33 @@ DEFAULT_ROLES = [
 ]
 
 
-def process_work_dispatch_with_ai(quotation_text: str, team_roles: list, project_name: str) -> dict:
-    """Use Claude API to break quotation into work packages assigned to team roles."""
-    client = get_ai_client()
-
+def process_work_dispatch_with_ai(quotation_text: str, team_roles: list, project_name: str,
+                                  api_key: str | None = None) -> dict:
+    """Use DeepSeek to break a quotation into work packages assigned to team roles."""
     roles_desc = "\n".join(
         f"- **{r['name']}** ({r['id']}): {r['desc']}" for r in team_roles
     )
 
-    prompt = f"""你是一位資深專案經理。請根據以下報價單/提案內容，將工作拆分成具體的工作包，並分派給對應的團隊角色。
+    prompt = f"""你是一位資深專案經理。以下是一份「報價單」內容（可能由 PDF / Word 轉成的純文字，表格會以「欄1 | 欄2 | …」的方式呈現）。請把報價單裡的服務項目拆分成具體、可執行的工作包，並分派給對應的團隊角色。
 
 ## 專案名稱：{project_name}
 
-## 報價單/提案內容：
+## 報價單內容：
 {quotation_text}
 
 ## 可用團隊角色：
 {roles_desc}
 
+## 拆分原則：
+- 報價單的「服務費用明細」通常包含「行銷模組 / 工作項目 / 單價 / 數量 / 期間 / 小計」等欄位。請以每個「行銷模組」底下的「工作項目」為基礎拆成工作包，必要時把一個大模組再拆成數個工作包。
+- 盡量保留並標註該項目對應的金額（單價或小計），方便對照報價單。
+- 每個工作包指派給最適合的「一個」主要角色；若需跨角色協作，在該工作包 notes 說明。
+- 若某項工作不屬於任何現有角色，指定最接近的角色並在 notes 說明。
+- 忽略匯款資訊、簽署欄、報價有效期等與執行無關的內容。
+
 ## 輸出要求：
-1. 使用繁體中文
-2. 請以 JSON 格式回覆：
+1. 全程使用繁體中文。
+2. 直接回覆 JSON（不要加任何其他文字、不要用程式碼區塊包起來），格式如下：
 {{
   "project_name": "{project_name}",
   "summary": "專案概述（1-2句話）",
@@ -644,6 +644,8 @@ def process_work_dispatch_with_ai(quotation_text: str, team_roles: list, project
     {{
       "id": "WP-001",
       "name": "工作包名稱",
+      "module": "對應的報價單行銷模組（若有）",
+      "amount": "對應金額（如 $18,000；無法對應填空字串）",
       "description": "具體工作說明",
       "assigned_to": "角色 id",
       "assigned_role_name": "角色名稱",
@@ -667,28 +669,19 @@ def process_work_dispatch_with_ai(quotation_text: str, team_roles: list, project
   "notes": "其他整體注意事項或建議"
 }}
 
-3. 工作包要具體、可執行，避免太模糊
-4. 每個工作包只分配給一個主要角色（如需跨角色協作，在 notes 中說明）
-5. 標明工作包之間的依賴關係
-6. 優先級根據時程急迫性和重要性判斷
-7. 如果報價單中的某項工作不屬於任何現有角色，請指定最接近的角色並在 notes 中說明
+3. 工作包要具體、可執行，避免太模糊。
+4. 標明工作包之間的依賴關係，優先級依時程急迫性與重要性判斷。"""
 
-請直接回覆 JSON，不要加任何其他文字。"""
-
-    message = client.messages.create(
-        model=ANTHROPIC_MODEL,
+    content = call_deepseek(
+        [
+            {"role": "system", "content": "你是一位資深、嚴謹的專案經理，只會回覆合法 JSON。"},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.3,
         max_tokens=8192,
-        messages=[{"role": "user", "content": prompt}],
+        api_key=api_key,
     )
-
-    response_text = message.content[0].text.strip()
-    if response_text.startswith("```"):
-        lines = response_text.split("\n")
-        response_text = "\n".join(lines[1:])
-        if response_text.endswith("```"):
-            response_text = response_text[:-3].strip()
-
-    return json.loads(response_text)
+    return json.loads(_strip_code_fence(content))
 
 
 def generate_dispatch_docx(result: dict) -> str:
@@ -722,6 +715,10 @@ def generate_dispatch_docx(result: dict) -> str:
     for wp in result.get("work_packages", []):
         doc.add_heading(f"{wp['id']} - {wp['name']}", level=2)
         doc.add_paragraph(f"負責角色：{wp.get('assigned_role_name', '')}")
+        if wp.get("module"):
+            doc.add_paragraph(f"報價模組：{wp['module']}")
+        if wp.get("amount"):
+            doc.add_paragraph(f"對應金額：{wp['amount']}")
         doc.add_paragraph(f"優先級：{wp.get('priority', '')}")
         doc.add_paragraph(f"預估天數：{wp.get('estimated_days', '')} 天")
         doc.add_paragraph(f"說明：{wp.get('description', '')}")
@@ -775,6 +772,7 @@ def process_work_dispatch():
             data["quotation_text"],
             data["roles"],
             data.get("project_name", "未命名專案"),
+            api_key=data.get("api_key"),
         )
         return jsonify(result)
     except Exception as e:
