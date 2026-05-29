@@ -5,35 +5,42 @@
 {% block content %}
 <!-- Steps -->
 <div class="steps">
-  <div class="step active" id="step1"><span class="step-num">1</span> 上傳會議記錄</div>
-  <div class="step" id="step2"><span class="step-num">2</span> 選擇產出文件</div>
-  <div class="step" id="step3"><span class="step-num">3</span> AI 分析處理</div>
-  <div class="step" id="step4"><span class="step-num">4</span> 檢視與匯出</div>
+  <div class="step active" id="step1"><span class="step-num">1</span> 上傳音檔</div>
+  <div class="step" id="step2"><span class="step-num">2</span> 中文逐字稿</div>
+  <div class="step" id="step3"><span class="step-num">3</span> 整理成會議記錄</div>
 </div>
 
 <!-- Section 1: Upload -->
 <div class="section active" id="section-upload">
   <div class="card">
-    <div class="card-header"><h2>輸入會議記錄</h2></div>
+    <div class="card-header"><h2>上傳會議音檔</h2></div>
 
     <div class="input-toggle">
       <button class="active" onclick="toggleInput('file')">上傳檔案</button>
-      <button onclick="toggleInput('text')">直接輸入</button>
+      <button onclick="toggleInput('text')">直接貼上逐字稿</button>
     </div>
 
     <div id="input-file">
       <!-- Whisper Settings -->
       <div class="whisper-config" id="whisper-config">
         <div class="config-header" onclick="document.getElementById('whisper-options').classList.toggle('show')">
-          <span>🎙️ 語音辨識設定</span>
+          <span>🎙️ 語音辨識設定（Google Colab）</span>
           <span class="config-toggle">▾</span>
         </div>
-        <div class="config-options" id="whisper-options">
+        <div class="config-options show" id="whisper-options">
           <!-- Colab Connection -->
           <div class="colab-section">
+            <div class="colab-steps">
+              <strong>怎麼取得轉錄網址：</strong>
+              <ol>
+                <li>打開 <a href="https://colab.research.google.com/drive/1WEF7aEny9olSGP34H9Voc03aC1WJ9Wpn" target="_blank" rel="noopener">Colab Whisper Notebook ↗</a></li>
+                <li>設好 ngrok token 後，點選單列「執行階段 → 全部執行」</li>
+                <li>複製它印出的 <code>https://xxxx.ngrok-free.app</code> 網址，貼到下方</li>
+              </ol>
+            </div>
             <div class="colab-row">
               <div class="form-group" style="flex:1;">
-                <label>Google Colab Whisper API URL</label>
+                <label>Colab Whisper API URL</label>
                 <input type="text" id="colab-url"
                   placeholder="例：https://xxxx-xx-xx.ngrok-free.app"
                   value="">
@@ -44,44 +51,27 @@
             </div>
             <div id="colab-status" class="colab-status"></div>
             <p class="config-hint" style="margin-top:6px;">
-              在 Google Colab 執行 <code>colab_whisper_api.ipynb</code> 取得 URL。使用 Colab GPU 跑 large-v3 模型，精準度最高。
+              使用 Colab GPU 跑 large-v3 模型，中文精準度最高。每次重開 Colab 網址都會變，需重新貼。
             </p>
           </div>
 
           <hr style="border:none; border-top:1px solid var(--border); margin:16px 0;">
 
-          <details>
-            <summary style="cursor:pointer; font-size:0.85rem; color:var(--text-muted);">本機 Whisper 設定（無 Colab 時使用）</summary>
-            <div class="config-row" style="margin-top:12px;">
-              <div class="form-group">
-                <label>Whisper 模型</label>
-                <select id="whisper-model">
-                  <option value="large-v3" selected>large-v3（最精準，需 GPU）</option>
-                  <option value="medium">medium（平衡速度與精準）</option>
-                  <option value="base">base（最快，精準度較低）</option>
-                  <option value="tiny">tiny（極速，適合測試）</option>
-                </select>
-              </div>
-            </div>
-          </details>
-
-          <hr style="border:none; border-top:1px solid var(--border); margin:16px 0;">
-
           <div class="form-group">
-            <label>會議背景提示（initial_prompt）</label>
+            <label>會議背景提示（選填，可大幅提升精準度）</label>
             <input type="text" id="initial-prompt"
-              placeholder="例：這是一場關於品牌網站改版的中文會議錄音。"
+              placeholder="例：這是一場關於品牌網站改版的中文會議錄音，提到的公司名為 MarketAI。"
               value="">
           </div>
-          <p class="config-hint" style="margin-top:8px;">提供會議背景可大幅提升中文辨識精準度。例如提到的公司名、產品名、專有名詞等。</p>
+          <p class="config-hint" style="margin-top:8px;">提供會議背景（公司名、產品名、專有名詞等）有助於辨識正確用字。</p>
         </div>
       </div>
 
       <div class="upload-zone" id="upload-zone">
-        <input type="file" id="file-input" accept=".txt,.md,.doc,.docx,.pdf,.mp3,.wav,.m4a,.ogg,.webm,.mp4">
-        <div class="upload-icon">📁</div>
-        <p><strong>點擊或拖曳檔案到這裡</strong></p>
-        <p class="formats">支援格式：TXT、DOCX、PDF（文字）/ MP3、WAV、M4A（錄音）</p>
+        <input type="file" id="file-input" accept=".mp3,.wav,.m4a,.ogg,.webm,.mp4">
+        <div class="upload-icon">🎙️</div>
+        <p><strong>點擊或拖曳音檔到這裡</strong></p>
+        <p class="formats">支援格式：MP3、WAV、M4A、OGG、WEBM、MP4</p>
       </div>
       <div id="file-info" class="file-info" style="display:none;">
         <span>📎</span>
@@ -91,13 +81,16 @@
     </div>
 
     <div id="input-text" style="display:none;">
-      <textarea class="text-input" id="meeting-text" placeholder="在此貼上或輸入會議記錄內容...&#10;&#10;例如：&#10;與會人員：王經理、李主任&#10;會議主題：2024 年度行銷計畫討論&#10;會議內容：..."></textarea>
+      <textarea class="text-input" id="meeting-text" placeholder="若已經有逐字稿，可直接貼在這裡，再進行下一步整理成會議記錄..."></textarea>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="useDirectText()">使用此逐字稿 →</button>
+      </div>
     </div>
 
     <!-- Transcription Result -->
     <div id="transcription-preview" style="display:none; margin-top:16px;">
       <div class="transcription-header">
-        <h3>🎙️ 語音轉文字結果</h3>
+        <h3>🎙️ 中文逐字稿</h3>
         <div class="input-toggle" style="margin:0;">
           <button class="active" onclick="switchTranscriptView('timestamped')">帶時間戳記</button>
           <button onclick="switchTranscriptView('plain')">純文字</button>
@@ -113,58 +106,22 @@
         <button class="btn btn-secondary" onclick="downloadTranscript()">📥 下載逐字稿 TXT</button>
         <span class="transcript-info" id="transcript-info"></span>
       </div>
-    </div>
-
-    <div class="btn-group">
-      <button class="btn btn-primary" onclick="goToStep2()">下一步 →</button>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="organizeNotes()">🤖 整理成會議記錄 →</button>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- Section 2: Select Output Types -->
-<div class="section" id="section-select">
+<!-- Section 2: Meeting Notes -->
+<div class="section" id="section-notes">
   <div class="card">
-    <div class="card-header"><h2>選擇要產出的文件</h2></div>
-
-    <div class="doc-options">
-      <div class="doc-option selected" data-type="research" onclick="toggleDocType(this)">
-        <div class="icon">🔍</div>
-        <div class="label">市場研究報告</div>
-        <div class="desc">市場分析、競品研究、目標受眾</div>
-      </div>
-      <div class="doc-option selected" data-type="proposal" onclick="toggleDocType(this)">
-        <div class="icon">📑</div>
-        <div class="label">行銷提案書</div>
-        <div class="desc">策略方向、執行方案、時程規劃</div>
-      </div>
-      <div class="doc-option selected" data-type="quotation" onclick="toggleDocType(this)">
-        <div class="icon">💰</div>
-        <div class="label">專案報價單</div>
-        <div class="desc">服務項目、費用明細、付款條件</div>
-      </div>
-    </div>
-
-    <details style="margin-top:16px;">
-      <summary style="cursor:pointer; color:var(--text-muted); font-size:0.85rem;">⚙️ 自訂格式模板</summary>
-      <div id="template-editor" style="margin-top:12px;"></div>
-    </details>
-
-    <div class="btn-group">
-      <button class="btn btn-secondary" onclick="goToStep(1)">← 上一步</button>
-      <button class="btn btn-primary" onclick="startProcessing()">開始產出 🚀</button>
-    </div>
-  </div>
-</div>
-
-<!-- Section 3: Results -->
-<div class="section" id="section-results">
-  <div class="card">
-    <div class="card-header"><h2>產出結果</h2></div>
-    <div class="result-tab-bar" id="result-tabs"></div>
-    <div id="result-contents"></div>
+    <div class="card-header"><h2>會議記錄</h2></div>
+    <div id="notes-content" class="notes-content"></div>
     <div class="btn-group">
       <button class="btn btn-secondary" onclick="goToStep(1)">← 重新開始</button>
-      <button class="btn btn-success" onclick="exportAll()">📥 全部匯出 DOCX</button>
+      <button class="btn btn-secondary" onclick="downloadNotesTxt()">📥 下載 TXT</button>
+      <button class="btn btn-success" onclick="exportNotesDocx()">📥 匯出 DOCX</button>
     </div>
   </div>
 </div>
@@ -207,12 +164,6 @@
   display: block;
 }
 
-.config-row {
-  display: grid;
-  grid-template-columns: 220px 1fr;
-  gap: 14px;
-}
-
 .config-hint {
   font-size: 0.8rem;
   color: var(--text-muted);
@@ -230,6 +181,33 @@
 /* Colab Section */
 .colab-section {
   margin-bottom: 4px;
+}
+
+.colab-steps {
+  font-size: 0.84rem;
+  color: var(--text-muted);
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  line-height: 1.7;
+}
+
+.colab-steps ol {
+  margin: 6px 0 0 18px;
+  padding: 0;
+}
+
+.colab-steps a {
+  color: var(--primary, #6d4cff);
+  font-weight: 600;
+}
+
+.colab-steps code {
+  background: var(--card, #fff);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.78rem;
 }
 
 .colab-row {
@@ -291,8 +269,19 @@
   color: var(--text-muted);
 }
 
+/* Meeting notes rendered output */
+.notes-content {
+  line-height: 1.8;
+}
+.notes-content h1 { font-size: 1.5rem; margin: 8px 0 16px; }
+.notes-content h2 { font-size: 1.15rem; margin: 20px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.notes-content h3 { font-size: 1rem; margin: 14px 0 8px; }
+.notes-content table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.9rem; }
+.notes-content th, .notes-content td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; }
+.notes-content th { background: var(--bg); }
+.notes-content ul { margin: 8px 0 8px 20px; }
+
 @media (max-width: 768px) {
-  .config-row { grid-template-columns: 1fr; }
   .transcription-header { flex-direction: column; align-items: flex-start; }
 }
 </style>

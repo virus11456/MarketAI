@@ -39,6 +39,11 @@ app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB
 ANTHROPIC_BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
 
+# DeepSeek (OpenAI-compatible) — 用於把逐字稿整理成會議記錄
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+
 
 def get_ai_client():
     return anthropic.Anthropic(base_url=ANTHROPIC_BASE_URL)
@@ -250,6 +255,116 @@ def generate_docx(result: dict, template_type: str) -> str:
     return filename
 
 
+def organize_meeting_notes(transcript: str) -> str:
+    """Use DeepSeek API to turn a raw transcript into structured meeting notes (Markdown)."""
+    if not DEEPSEEK_API_KEY:
+        raise RuntimeError(
+            "尚未設定 DEEPSEEK_API_KEY 環境變數。請在 Vercel 環境變數或本機 .env 中設定。"
+        )
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    prompt = f"""你是一位專業的會議記錄整理助理。以下是一段會議錄音的逐字稿，請把它整理成一份清楚、專業的「會議記錄」。
+
+## 逐字稿內容：
+{transcript}
+
+## 輸出要求：
+1. 全程使用繁體中文。
+2. 直接輸出 Markdown 格式的會議記錄，不要加任何開場白或結語、不要用程式碼區塊包起來。
+3. 請依照以下結構整理（若逐字稿中沒有相關資訊，該欄位可留「（未提及）」）：
+
+# 會議記錄
+
+**會議主題：** （依內容推斷）
+**會議日期：** （逐字稿中有提到就用，否則填 {today}）
+**與會人員：** （依內容推斷，逐字稿沒有就寫「未提及」）
+
+## 會議摘要
+（用 3-5 句話總結整場會議重點）
+
+## 討論事項
+（依主題分點條列，每個議題說明討論內容與結論）
+
+## 決議事項
+（條列本次會議確定的決定）
+
+## 待辦事項 (Action Items)
+（用表格呈現，欄位：項目 / 負責人 / 預計完成時間。若無負責人或時間填「待定」）
+
+4. 內容要忠於逐字稿，不要虛構不存在的資訊；可以適度潤飾語句讓記錄更通順。
+"""
+
+    resp = http_requests.post(
+        DEEPSEEK_BASE_URL.rstrip("/") + "/chat/completions",
+        headers={
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": DEEPSEEK_MODEL,
+            "messages": [
+                {"role": "system", "content": "你是一位專業、嚴謹的會議記錄整理助理。"},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.3,
+            "stream": False,
+        },
+        timeout=300,
+    )
+
+    if resp.status_code != 200:
+        raise RuntimeError(f"DeepSeek API 錯誤（{resp.status_code}）：{resp.text[:300]}")
+
+    data = resp.json()
+    content = data["choices"][0]["message"]["content"].strip()
+    # Strip code fences if the model wrapped the output
+    if content.startswith("```"):
+        lines = content.split("\n")
+        content = "\n".join(lines[1:])
+        if content.rstrip().endswith("```"):
+            content = content.rstrip()[:-3].strip()
+    return content
+
+
+def generate_markdown_docx(markdown_text: str, title: str = "會議記錄") -> str:
+    """Generate a .docx file from a Markdown string (used for meeting notes)."""
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    doc = Document()
+
+    in_table = False
+    for raw_line in markdown_text.split("\n"):
+        line = raw_line.strip()
+        if not line:
+            in_table = False
+            continue
+
+        if line.startswith("# "):
+            heading = doc.add_heading(line[2:].strip(), level=0)
+            heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        elif line.startswith("## "):
+            doc.add_heading(line[3:].strip(), level=1)
+        elif line.startswith("### "):
+            doc.add_heading(line[4:].strip(), level=2)
+        elif line.startswith("|") and line.endswith("|"):
+            # Skip Markdown table separator rows
+            if line.replace("|", "").replace("-", "").replace(":", "").replace(" ", "") == "":
+                continue
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            doc.add_paragraph("  |  ".join(cells))
+            in_table = True
+        elif line.startswith("- ") or line.startswith("* "):
+            doc.add_paragraph(line[2:].strip(), style="List Bullet")
+        else:
+            doc.add_paragraph(line)
+
+    filename = f"meeting_notes_{uuid.uuid4().hex[:8]}.docx"
+    output_path = OUTPUT_FOLDER / filename
+    doc.save(str(output_path))
+    return filename
+
+
 @app.route("/")
 def home():
     return render_template("home.html", active_page="dashboard")
@@ -268,6 +383,33 @@ def ad_report():
 @app.route("/work-dispatch")
 def work_dispatch():
     return render_template("work_dispatch.html", active_page="work_dispatch")
+
+
+@app.route("/api/meeting/organize", methods=["POST"])
+def meeting_organize():
+    data = request.get_json()
+    text = (data or {}).get("text", "").strip()
+    if not text:
+        return jsonify({"error": "缺少逐字稿內容"}), 400
+    try:
+        notes = organize_meeting_notes(text)
+        return jsonify({"notes": notes})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/meeting/export", methods=["POST"])
+def meeting_export():
+    data = request.get_json()
+    notes = (data or {}).get("notes", "").strip()
+    title = (data or {}).get("title", "會議記錄")
+    if not notes:
+        return jsonify({"error": "缺少會議記錄內容"}), 400
+    try:
+        filename = generate_markdown_docx(notes, title)
+        return jsonify({"filename": filename})
+    except Exception as e:
+        return jsonify({"error": f"匯出失敗：{str(e)}"}), 500
 
 
 @app.route("/api/colab-health", methods=["POST"])
