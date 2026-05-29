@@ -91,6 +91,11 @@ function wdToggleInput(mode) {
 
 // --- File Upload ---
 async function wdHandleFile(file) {
+  if (!file) {
+    showToast('請先選擇檔案', 'error');
+    return;
+  }
+
   document.getElementById('wd-file-name').textContent = file.name;
   document.getElementById('wd-file-info').style.display = 'flex';
 
@@ -100,7 +105,19 @@ async function wdHandleFile(file) {
   showLoading('正在處理檔案...');
   try {
     const res = await fetch('/api/upload', { method: 'POST', body: formData });
-    const data = await res.json();
+
+    // 後端若 crash / 逾時，可能回傳非 JSON（Vercel 錯誤頁），先安全解析
+    let data;
+    const raw = await res.text();
+    try {
+      data = JSON.parse(raw);
+    } catch (_) {
+      throw new Error(
+        res.status === 413 ? '檔案太大，請壓縮或改用較小的檔案' :
+        `伺服器回應異常（HTTP ${res.status}）` + (raw ? '：' + raw.slice(0, 120) : '')
+      );
+    }
+
     if (data.error) {
       showToast(data.error, 'error');
       wdRemoveFile();
@@ -117,7 +134,7 @@ async function wdHandleFile(file) {
     document.getElementById('wd-input-file').style.display = 'none';
     showToast('檔案已匯入', 'success');
   } catch (err) {
-    showToast('檔案處理失敗', 'error');
+    showToast('檔案處理失敗：' + (err.message || err), 'error');
     wdRemoveFile();
   } finally {
     hideLoading();
