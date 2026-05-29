@@ -436,6 +436,18 @@ def process_ad_report_with_ai(report_info: dict, api_key: str | None = None) -> 
         platform_order_desc.append(label)
     order_text = " → ".join(platform_order_desc)
 
+    # Build per-platform section spec (each platform = one section with 成效 + 素材分析).
+    # Sections are numbered: 1 本月總覽, 2..(N+1) 各平台, then 本月洞察, 未來建議調整.
+    platform_spec_lines = []
+    for idx, p in enumerate(all_platforms, start=2):
+        label = PLATFORM_LABELS.get(p, p)
+        platform_spec_lines.append(
+            f"{idx}. **{label} 成效與素材分析** - 此平台（id: {p}）的成效分析與素材分析（見下方內容要求）。"
+        )
+    platform_section_spec = "\n".join(platform_spec_lines)
+    n_insight = len(all_platforms) + 2
+    n_future = len(all_platforms) + 3
+
     prompt = f"""你是一位資深數位廣告顧問。請根據以下廣告後台數據，產出一份完整的廣告月報。
 
 ## 基本資訊
@@ -452,25 +464,20 @@ def process_ad_report_with_ai(report_info: dict, api_key: str | None = None) -> 
 - 指標若原始數據沒有，請以公式計算：CTR＝點擊/曝光、CPC＝花費/點擊、CPM＝花費/曝光×1000、CPA＝花費/成果、ROAS＝轉換價值/花費。計算後請標示為「(推算)」。
 - 金額數字可能含千分位逗號（如 142,478），請正確解讀為數值。
 
-## 月報架構（請嚴格按照以下順序）：
+## 月報架構（請「嚴格」按照以下順序產出 sections，不可增減段落、不可改變順序）：
 
-1. **封面** - 包含客戶名稱「{client_name}」、公司名稱「{company_name}」、報告月份「{report_month}」、月報標題
-2. **大綱** - 本月報內容目錄
-3. **總覽數據成效** - 彙總所有平台的 Total 數據（總花費、總曝光、總點擊、總轉換等），並與上月或目標做比較分析
-4. **本月廣告數據洞察**：
-   - 廣告受眾洞察：分析哪些受眾表現最好/最差，年齡、性別、地區等維度
-   - 廣告素材洞察：分析哪些素材類型/創意方向表現較好，點擊率、互動率等
-5. **各平台成效報告**（順序：{order_text}）：
-   每個平台包含：
-   - 花費與成效總覽
-   - 各廣告活動/廣告組合表現（用表格呈現）
-   - 關鍵指標分析（CPM、CPC、CTR、CPA、ROAS 等）
-   - 該平台優化建議
-6. **下月預計調整總結** - 根據本月數據，提出下月的策略調整方向、預算分配建議、素材優化方向
-7. **感謝頁** - 專業的結尾感謝語
+1. **本月總覽** - 彙總本月所有平台的整體數據（總花費、總曝光、總點擊、總轉換、整體 ROAS 等），用表格呈現各平台對比與加總，並用 2-4 句話總結本月整體表現。
+{platform_section_spec}
+{n_insight}. **本月洞察** - 跨平台的綜合洞察：哪個平台/受眾/素材方向表現最好與最差、值得注意的趨勢與問題，條列具體發現（每點都要有數據佐證）。
+{n_future}. **未來建議調整** - 根據本月數據提出下月的具體調整方向：預算分配建議、受眾調整、素材優化方向、各平台操作建議，條列可執行的行動。
+
+## 各平台成效段落（上述第 2 段起，每個平台一段）內容要求：
+每個平台段落都要包含以下兩個子標題（用 Markdown 的 `###`）：
+- **### 成效分析**：花費與成效總覽、各廣告活動/廣告組合表現（用 Markdown 表格）、關鍵指標分析（CPM、CPC、CTR、CPA、ROAS 等，沒有原始數據就用公式推算並標「(推算)」）。
+- **### 素材分析**：分析該平台各素材/廣告組合/創意方向的表現差異（點擊率、互動率、成果成本等），指出表現好與差的素材並說明可能原因。
 
 ## 輸出要求：
-1. 使用繁體中文
+1. 使用繁體中文。
 2. 請以 JSON 格式回覆：
 {{
   "cover": {{
@@ -481,7 +488,7 @@ def process_ad_report_with_ai(report_info: dict, api_key: str | None = None) -> 
   }},
   "sections": [
     {{
-      "id": "段落識別碼（如 outline, total, insights, meta, google 等）",
+      "id": "段落識別碼（overview / 平台id（如 meta、google）/ insights / future）",
       "title": "段落標題",
       "content": "段落內容（支援 Markdown 格式，表格請用 Markdown 表格）"
     }}
@@ -491,10 +498,10 @@ def process_ad_report_with_ai(report_info: dict, api_key: str | None = None) -> 
     "content": "感謝語內容"
   }}
 }}
-3. 數據要精確引用，不要虛構數字
-4. 表格要清楚呈現各項指標
-5. 洞察要具體、可執行
-6. 如果數據不足，請標註「[待補充]」
+3. 數據要精確引用，不要虛構數字。
+4. 表格要清楚呈現各項指標。
+5. 洞察與建議要具體、可執行。
+6. 如果數據不足，請標註「[待補充]」。
 
 請直接回覆 JSON，不要加任何其他文字。"""
 
