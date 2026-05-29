@@ -217,7 +217,7 @@ function renderDispatchResults(data) {
 
   // Calculate totals
   const totalDays = (data.role_summary || []).reduce((sum, r) => sum + (r.total_days || 0), 0);
-  const totalPackages = data.total_items || (data.work_packages || []).length;
+  const totalPackages = (data.work_packages || []).length || data.total_items || 0;
   const totalRoles = (data.role_summary || []).length;
 
   let html = '';
@@ -322,8 +322,14 @@ function renderWorkPackage(wp, showRole) {
   if (showRole) {
     html += `<span>👤 ${wp.assigned_role_name || wp.assigned_to}</span>`;
   }
+  html += `<span>⏱ ${wp.estimated_days || '?'} 天</span>`;
+  if (wp.module) {
+    html += `<span>🗂 ${wp.module}</span>`;
+  }
+  if (wp.amount) {
+    html += `<span>💰 ${wp.amount}</span>`;
+  }
   html += `
-        <span>⏱ ${wp.estimated_days || '?'} 天</span>
       </div>
       <div class="wp-desc">${wp.description || ''}</div>`;
 

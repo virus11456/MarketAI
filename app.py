@@ -119,7 +119,20 @@ def read_text_file(file_path: str) -> str:
         from docx import Document
 
         doc = Document(file_path)
-        return "\n".join(p.text for p in doc.paragraphs)
+        parts = [p.text for p in doc.paragraphs if p.text.strip()]
+        # 報價單內容多半在表格裡，需一併讀出
+        for table in doc.tables:
+            for row in table.rows:
+                cells = [c.text.strip() for c in row.cells]
+                line = " | ".join(c for c in cells if c)
+                if line:
+                    parts.append(line)
+        return "\n".join(parts)
+    elif ext == ".pdf":
+        from pypdf import PdfReader
+
+        reader = PdfReader(file_path)
+        return "\n".join((page.extract_text() or "") for page in reader.pages)
     elif ext == ".csv":
         import csv
 
@@ -255,13 +268,51 @@ def generate_docx(result: dict, template_type: str) -> str:
     return filename
 
 
-def organize_meeting_notes(transcript: str) -> str:
-    """Use DeepSeek API to turn a raw transcript into structured meeting notes (Markdown)."""
+def _strip_code_fence(content: str) -> str:
+    """Remove a leading/trailing Markdown code fence if the model wrapped its output."""
+    content = content.strip()
+    if content.startswith("```"):
+        lines = content.split("\n")
+        content = "\n".join(lines[1:])
+        if content.rstrip().endswith("```"):
+            content = content.rstrip()[:-3].strip()
+    return content
+
+
+def call_deepseek(messages: list, temperature: float = 0.3, max_tokens: int | None = None) -> str:
+    """Call the DeepSeek (OpenAI-compatible) chat completions API and return the text content."""
     if not DEEPSEEK_API_KEY:
         raise RuntimeError(
             "尚未設定 DEEPSEEK_API_KEY 環境變數。請在 Vercel 環境變數或本機 .env 中設定。"
         )
 
+    payload = {
+        "model": DEEPSEEK_MODEL,
+        "messages": messages,
+        "temperature": temperature,
+        "stream": False,
+    }
+    if max_tokens:
+        payload["max_tokens"] = max_tokens
+
+    resp = http_requests.post(
+        DEEPSEEK_BASE_URL.rstrip("/") + "/chat/completions",
+        headers={
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=300,
+    )
+
+    if resp.status_code != 200:
+        raise RuntimeError(f"DeepSeek API 錯誤（{resp.status_code}）：{resp.text[:300]}")
+
+    return resp.json()["choices"][0]["message"]["content"].strip()
+
+
+def organize_meeting_notes(transcript: str) -> str:
+    """Use DeepSeek API to turn a raw transcript into structured meeting notes (Markdown)."""
     today = datetime.now().strftime("%Y-%m-%d")
     prompt = f"""你是一位專業的會議記錄整理助理。以下是一段會議錄音的逐字稿，請把它整理成一份清楚、專業的「會議記錄」。
 
@@ -294,36 +345,14 @@ def organize_meeting_notes(transcript: str) -> str:
 4. 內容要忠於逐字稿，不要虛構不存在的資訊；可以適度潤飾語句讓記錄更通順。
 """
 
-    resp = http_requests.post(
-        DEEPSEEK_BASE_URL.rstrip("/") + "/chat/completions",
-        headers={
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": DEEPSEEK_MODEL,
-            "messages": [
-                {"role": "system", "content": "你是一位專業、嚴謹的會議記錄整理助理。"},
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": 0.3,
-            "stream": False,
-        },
-        timeout=300,
+    content = call_deepseek(
+        [
+            {"role": "system", "content": "你是一位專業、嚴謹的會議記錄整理助理。"},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.3,
     )
-
-    if resp.status_code != 200:
-        raise RuntimeError(f"DeepSeek API 錯誤（{resp.status_code}）：{resp.text[:300]}")
-
-    data = resp.json()
-    content = data["choices"][0]["message"]["content"].strip()
-    # Strip code fences if the model wrapped the output
-    if content.startswith("```"):
-        lines = content.split("\n")
-        content = "\n".join(lines[1:])
-        if content.rstrip().endswith("```"):
-            content = content.rstrip()[:-3].strip()
-    return content
+    return _strip_code_fence(content)
 
 
 def generate_markdown_docx(markdown_text: str, title: str = "會議記錄") -> str:
@@ -758,26 +787,31 @@ DEFAULT_ROLES = [
 
 
 def process_work_dispatch_with_ai(quotation_text: str, team_roles: list, project_name: str) -> dict:
-    """Use Claude API to break quotation into work packages assigned to team roles."""
-    client = get_ai_client()
-
+    """Use DeepSeek to break a quotation into work packages assigned to team roles."""
     roles_desc = "\n".join(
         f"- **{r['name']}** ({r['id']}): {r['desc']}" for r in team_roles
     )
 
-    prompt = f"""你是一位資深專案經理。請根據以下報價單/提案內容，將工作拆分成具體的工作包，並分派給對應的團隊角色。
+    prompt = f"""你是一位資深專案經理。以下是一份「報價單」內容（可能由 PDF / Word 轉成的純文字，表格會以「欄1 | 欄2 | …」的方式呈現）。請把報價單裡的服務項目拆分成具體、可執行的工作包，並分派給對應的團隊角色。
 
 ## 專案名稱：{project_name}
 
-## 報價單/提案內容：
+## 報價單內容：
 {quotation_text}
 
 ## 可用團隊角色：
 {roles_desc}
 
+## 拆分原則：
+- 報價單的「服務費用明細」通常包含「行銷模組 / 工作項目 / 單價 / 數量 / 期間 / 小計」等欄位。請以每個「行銷模組」底下的「工作項目」為基礎拆成工作包，必要時把一個大模組再拆成數個工作包。
+- 盡量保留並標註該項目對應的金額（單價或小計），方便對照報價單。
+- 每個工作包指派給最適合的「一個」主要角色；若需跨角色協作，在該工作包 notes 說明。
+- 若某項工作不屬於任何現有角色，指定最接近的角色並在 notes 說明。
+- 忽略匯款資訊、簽署欄、報價有效期等與執行無關的內容。
+
 ## 輸出要求：
-1. 使用繁體中文
-2. 請以 JSON 格式回覆：
+1. 全程使用繁體中文。
+2. 直接回覆 JSON（不要加任何其他文字、不要用程式碼區塊包起來），格式如下：
 {{
   "project_name": "{project_name}",
   "summary": "專案概述（1-2句話）",
@@ -786,6 +820,8 @@ def process_work_dispatch_with_ai(quotation_text: str, team_roles: list, project
     {{
       "id": "WP-001",
       "name": "工作包名稱",
+      "module": "對應的報價單行銷模組（若有）",
+      "amount": "對應金額（如 $18,000；無法對應填空字串）",
       "description": "具體工作說明",
       "assigned_to": "角色 id",
       "assigned_role_name": "角色名稱",
@@ -809,28 +845,18 @@ def process_work_dispatch_with_ai(quotation_text: str, team_roles: list, project
   "notes": "其他整體注意事項或建議"
 }}
 
-3. 工作包要具體、可執行，避免太模糊
-4. 每個工作包只分配給一個主要角色（如需跨角色協作，在 notes 中說明）
-5. 標明工作包之間的依賴關係
-6. 優先級根據時程急迫性和重要性判斷
-7. 如果報價單中的某項工作不屬於任何現有角色，請指定最接近的角色並在 notes 中說明
+3. 工作包要具體、可執行，避免太模糊。
+4. 標明工作包之間的依賴關係，優先級依時程急迫性與重要性判斷。"""
 
-請直接回覆 JSON，不要加任何其他文字。"""
-
-    message = client.messages.create(
-        model=ANTHROPIC_MODEL,
+    content = call_deepseek(
+        [
+            {"role": "system", "content": "你是一位資深、嚴謹的專案經理，只會回覆合法 JSON。"},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.3,
         max_tokens=8192,
-        messages=[{"role": "user", "content": prompt}],
     )
-
-    response_text = message.content[0].text.strip()
-    if response_text.startswith("```"):
-        lines = response_text.split("\n")
-        response_text = "\n".join(lines[1:])
-        if response_text.endswith("```"):
-            response_text = response_text[:-3].strip()
-
-    return json.loads(response_text)
+    return json.loads(_strip_code_fence(content))
 
 
 def generate_dispatch_docx(result: dict) -> str:
@@ -864,6 +890,10 @@ def generate_dispatch_docx(result: dict) -> str:
     for wp in result.get("work_packages", []):
         doc.add_heading(f"{wp['id']} - {wp['name']}", level=2)
         doc.add_paragraph(f"負責角色：{wp.get('assigned_role_name', '')}")
+        if wp.get("module"):
+            doc.add_paragraph(f"報價模組：{wp['module']}")
+        if wp.get("amount"):
+            doc.add_paragraph(f"對應金額：{wp['amount']}")
         doc.add_paragraph(f"優先級：{wp.get('priority', '')}")
         doc.add_paragraph(f"預估天數：{wp.get('estimated_days', '')} 天")
         doc.add_paragraph(f"說明：{wp.get('description', '')}")
