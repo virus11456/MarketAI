@@ -140,7 +140,8 @@ def read_text_file(file_path: str) -> str:
         with open(file_path, "r", encoding="utf-8-sig") as f:
             reader = csv.reader(f)
             for row in reader:
-                rows.append(",".join(row))
+                # 用 | 分隔欄位，避免值內含千分位逗號（如 "142,478"）造成欄位錯位
+                rows.append(" | ".join(cell.strip() for cell in row))
         return "\n".join(rows)
     elif ext in (".xlsx", ".xls"):
         from openpyxl import load_workbook
@@ -579,9 +580,7 @@ PLATFORM_LABELS = {
 
 
 def process_ad_report_with_ai(report_info: dict) -> dict:
-    """Use Claude API to generate ad monthly report."""
-    client = get_ai_client()
-
+    """Use DeepSeek to generate an ad monthly report from platform data (incl. CSV exports)."""
     client_name = report_info.get("client_name", "")
     company_name = report_info.get("company_name", "")
     report_month = report_info.get("report_month", "")
@@ -624,6 +623,12 @@ def process_ad_report_with_ai(report_info: dict) -> dict:
 
 ## 各平台廣告數據：
 {platforms_text}
+
+## 數據格式說明（資料可能直接來自各平台後台匯出的 CSV，欄位以「 | 」分隔）：
+- **Google Ads**：開頭可能有「廣告活動報表」「日期區間」等抬頭列；含「總計：…」彙總列（總計列可作為平台整體數據）。常見欄位對應：費用＝花費、曝光、互動/點擊、點閱率＝CTR、轉換、單次轉換費用＝CPA、轉換價值、「轉換價值/費用」＝ROAS、貨幣代碼為 TWD。請以非總計的各「廣告活動」列做活動別表格。
+- **Meta（Facebook / Instagram）**：每列為一個「廣告組合」。常見欄位對應：「花費金額 (TWD)」＝花費、曝光次數、觸及人數、連結點擊次數、成果（其意義依「成果指標」欄而定，例如 messaging_conversation_started 為訊息對話數）、每次成果成本＝CPA、廣告組合名稱常含受眾資訊（如「年齡 : 45y-65y+」「興趣受眾 : 個人護理」可作為受眾洞察）。
+- 指標若原始數據沒有，請以公式計算：CTR＝點擊/曝光、CPC＝花費/點擊、CPM＝花費/曝光×1000、CPA＝花費/成果、ROAS＝轉換價值/花費。計算後請標示為「(推算)」。
+- 金額數字可能含千分位逗號（如 142,478），請正確解讀為數值。
 
 ## 月報架構（請嚴格按照以下順序）：
 
@@ -671,20 +676,15 @@ def process_ad_report_with_ai(report_info: dict) -> dict:
 
 請直接回覆 JSON，不要加任何其他文字。"""
 
-    message = client.messages.create(
-        model=ANTHROPIC_MODEL,
+    content = call_deepseek(
+        [
+            {"role": "system", "content": "你是一位資深數位廣告顧問，只會回覆合法 JSON。"},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.4,
         max_tokens=8192,
-        messages=[{"role": "user", "content": prompt}],
     )
-
-    response_text = message.content[0].text.strip()
-    if response_text.startswith("```"):
-        lines = response_text.split("\n")
-        response_text = "\n".join(lines[1:])
-        if response_text.endswith("```"):
-            response_text = response_text[:-3].strip()
-
-    return json.loads(response_text)
+    return json.loads(_strip_code_fence(content))
 
 
 def generate_ad_report_docx(result: dict) -> str:
