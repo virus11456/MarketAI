@@ -9,13 +9,12 @@
 {% block content %}
 <!-- Steps -->
 <div class="steps">
-  <div class="step active" id="ar-step1"><span class="step-num">1</span> 基本資訊</div>
-  <div class="step" id="ar-step2"><span class="step-num">2</span> 平台數據</div>
-  <div class="step" id="ar-step3"><span class="step-num">3</span> AI 產出月報</div>
-  <div class="step" id="ar-step4"><span class="step-num">4</span> 檢視與匯出</div>
+  <div class="step active" id="ar-step1"><span class="step-num">1</span> 填寫資料</div>
+  <div class="step" id="ar-step3"><span class="step-num">2</span> AI 產出月報</div>
+  <div class="step" id="ar-step4"><span class="step-num">3</span> 檢視與匯出</div>
 </div>
 
-<!-- Step 1: Basic Info -->
+<!-- Step 1: Basic Info + Platform Data (single page) -->
 <div class="section active" id="ar-section-info">
   <div class="card">
     <div class="card-header"><h2>基本資訊</h2></div>
@@ -33,25 +32,19 @@
         <input type="month" id="report-month">
       </div>
     </div>
-    <div class="btn-group">
-      <button class="btn btn-primary" onclick="arGoToStep(2)">下一步 →</button>
-    </div>
   </div>
-</div>
 
-<!-- Step 2: Platform Data -->
-<div class="section" id="ar-section-platforms">
   <div class="card">
-    <div class="card-header"><h2>選擇廣告平台並輸入數據</h2></div>
+    <div class="card-header"><h2>各平台數據</h2></div>
     <p style="color:var(--text-muted); margin-bottom:16px; font-size:0.88rem;">
-      點選要加入的平台，然後輸入或貼上後台數據。
+      點選要納入月報的平台，每個平台各自上傳後台匯出的 CSV / Excel，或直接貼上數據。
     </p>
 
     <div class="platform-selector">
       <div class="platform-chip selected" data-platform="meta" onclick="togglePlatform(this)">
         <span class="chip-icon">📘</span> Meta
       </div>
-      <div class="platform-chip" data-platform="google" onclick="togglePlatform(this)">
+      <div class="platform-chip selected" data-platform="google" onclick="togglePlatform(this)">
         <span class="chip-icon">🔴</span> Google
       </div>
       <div class="platform-chip" data-platform="line" onclick="togglePlatform(this)">
@@ -65,34 +58,9 @@
       </div>
     </div>
 
-    <div id="platform-panels">
-      <div class="platform-panel" id="panel-meta" data-platform="meta">
-        <div class="panel-header">
-          <h3>📘 Meta (Facebook / Instagram) 廣告數據</h3>
-          <button class="btn-icon" onclick="removePlatformPanel('meta')" title="移除">✕</button>
-        </div>
-        <div class="input-toggle" style="margin-bottom:12px;">
-          <button class="active" onclick="togglePanelInput(this, 'meta', 'paste')">貼上數據</button>
-          <button onclick="togglePanelInput(this, 'meta', 'upload')">上傳檔案</button>
-        </div>
-        <div class="panel-input-paste" id="meta-paste">
-          <textarea class="text-input platform-data" data-platform="meta" style="min-height:180px;"
-            placeholder="從 Meta 廣告後台複製數據貼在這裡...&#10;&#10;例如：&#10;廣告活動：品牌知名度 Q1&#10;花費：NT$ 150,000&#10;曝光：1,200,000&#10;點擊：45,000&#10;CTR：3.75%"></textarea>
-        </div>
-        <div class="panel-input-upload" id="meta-upload" style="display:none;">
-          <div class="upload-zone" style="padding:24px;">
-            <input type="file" accept=".csv,.xlsx,.xls,.txt" onchange="handlePlatformFile(this, 'meta')">
-            <p><strong>上傳 CSV / Excel 報表</strong></p>
-          </div>
-          <div class="file-info" id="meta-file-info" style="display:none;">
-            <span>📎</span><span class="file-name" id="meta-file-name"></span>
-          </div>
-        </div>
-      </div>
-    </div>
+    <div id="platform-panels"></div>
 
     <div class="btn-group">
-      <button class="btn btn-secondary" onclick="arGoToStep(1)">← 上一步</button>
       <button class="btn btn-primary" onclick="arStartProcessing()">產出月報 🚀</button>
     </div>
   </div>
