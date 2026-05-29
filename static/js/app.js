@@ -47,19 +47,25 @@ async function handleFileSelect(file) {
   document.getElementById('file-name').textContent = file.name;
   document.getElementById('file-info').style.display = 'flex';
 
+  const groqKey = (typeof getGroqKey === 'function') ? getGroqKey() : '';
   const colabUrl = document.getElementById('colab-url').value.trim();
-  if (!colabUrl) {
-    showToast('請先填入 Colab Whisper API URL（見上方說明）', 'error');
+
+  if (!groqKey && !colabUrl) {
+    showToast('請先在右上角「API 設定」填入 Groq API Key（推薦），或在下方填入 Colab API URL', 'error');
     removeFile();
+    toggleApiSettings();
     return;
   }
 
   const formData = new FormData();
   formData.append('file', file);
   formData.append('initial_prompt', document.getElementById('initial-prompt').value);
-  formData.append('colab_url', colabUrl);
+  if (groqKey) formData.append('groq_key', groqKey);
+  if (colabUrl) formData.append('colab_url', colabUrl);
 
-  showLoading('透過 Google Colab GPU 轉錄中（large-v3），長音檔請耐心等候...');
+  showLoading(groqKey
+    ? '透過 Groq Whisper 轉錄中（large-v3），長音檔請耐心等候...'
+    : '透過 Google Colab GPU 轉錄中（large-v3），長音檔請耐心等候...');
 
   try {
     const res = await fetch('/api/upload', { method: 'POST', body: formData });

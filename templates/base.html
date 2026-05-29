@@ -95,7 +95,14 @@
       <input type="password" id="deepseek-key-input" placeholder="sk-...">
       <button type="button" class="btn-save-key" onclick="saveDeepSeekKey()">儲存</button>
     </div>
-    <p class="api-settings-hint">用於會議記錄整理、工作包拆分、廣告月報。只會存在這台瀏覽器（localStorage），不會上傳或寫入程式碼。</p>
+    <p class="api-settings-hint">用於會議記錄整理、工作包拆分、廣告月報。</p>
+
+    <label for="groq-key-input" style="margin-top:14px;">Groq API Key（語音轉逐字稿）</label>
+    <div class="api-settings-row">
+      <input type="password" id="groq-key-input" placeholder="gsk_...">
+      <button type="button" class="btn-save-key" onclick="saveGroqKey()">儲存</button>
+    </div>
+    <p class="api-settings-hint">會議記錄上傳音檔時用來轉中文逐字稿（免費額度，去 console.groq.com 取得）。所有 key 只存在這台瀏覽器（localStorage），不會上傳或寫入程式碼。</p>
     <span class="api-settings-status" id="deepseek-key-status"></span>
   </div>
 
@@ -135,21 +142,31 @@ function updateApiBadge() {
     badge.classList.remove('ready');
   }
 }
+function getGroqKey() {
+  return (localStorage.getItem('marketai_groq_key') || '').trim();
+}
 function toggleApiSettings() {
   const panel = document.getElementById('api-settings-panel');
   const showing = panel.classList.toggle('show');
   if (showing) {
-    const input = document.getElementById('deepseek-key-input');
-    if (input) input.value = getDeepSeekKey();
+    const ds = document.getElementById('deepseek-key-input');
+    if (ds) ds.value = getDeepSeekKey();
+    const gq = document.getElementById('groq-key-input');
+    if (gq) gq.value = getGroqKey();
   }
 }
 function saveDeepSeekKey() {
   const val = document.getElementById('deepseek-key-input').value.trim();
   localStorage.setItem('marketai_deepseek_key', val);
   const status = document.getElementById('deepseek-key-status');
-  if (status) status.textContent = val ? '已儲存 ✓' : '已清除';
+  if (status) status.textContent = val ? 'DeepSeek 已儲存 ✓' : '已清除';
   updateApiBadge();
-  if (val) setTimeout(() => document.getElementById('api-settings-panel').classList.remove('show'), 800);
+}
+function saveGroqKey() {
+  const val = document.getElementById('groq-key-input').value.trim();
+  localStorage.setItem('marketai_groq_key', val);
+  const status = document.getElementById('deepseek-key-status');
+  if (status) status.textContent = val ? 'Groq 已儲存 ✓' : 'Groq 已清除';
 }
 document.addEventListener('DOMContentLoaded', updateApiBadge);
 function showLoading(msg) {

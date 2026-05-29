@@ -24,12 +24,19 @@
       <!-- Whisper Settings -->
       <div class="whisper-config" id="whisper-config">
         <div class="config-header" onclick="document.getElementById('whisper-options').classList.toggle('show')">
-          <span>🎙️ 語音辨識設定（Google Colab）</span>
+          <span>🎙️ 語音辨識設定</span>
           <span class="config-toggle">▾</span>
         </div>
         <div class="config-options show" id="whisper-options">
+          <div class="colab-steps" style="border-left:3px solid var(--primary,#6d4cff);">
+            <strong>🚀 主力：Groq Whisper（推薦）</strong>
+            <p style="margin:6px 0 0;">在右上角「API 設定」填入 Groq API Key 後，直接上傳音檔即可自動轉中文逐字稿，無需 Colab。免費額度可至 <a href="https://console.groq.com" target="_blank" rel="noopener">console.groq.com</a> 取得。</p>
+          </div>
+
+          <details style="margin-bottom:14px;">
+            <summary style="cursor:pointer; font-size:0.85rem; color:var(--text-muted);">備援方案：Google Colab Whisper（免費但需手動執行）</summary>
           <!-- Colab Connection -->
-          <div class="colab-section">
+          <div class="colab-section" style="margin-top:12px;">
             <div class="colab-steps">
               <strong>怎麼取得轉錄網址：</strong>
               <ol>
@@ -51,9 +58,10 @@
             </div>
             <div id="colab-status" class="colab-status"></div>
             <p class="config-hint" style="margin-top:6px;">
-              使用 Colab GPU 跑 large-v3 模型，中文精準度最高。每次重開 Colab 網址都會變，需重新貼。
+              使用 Colab GPU 跑 large-v3 模型。每次重開 Colab 網址都會變，需重新貼。若已填 Groq Key 則優先使用 Groq。
             </p>
           </div>
+          </details>
 
           <hr style="border:none; border-top:1px solid var(--border); margin:16px 0;">
 

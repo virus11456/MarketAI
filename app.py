@@ -40,6 +40,60 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
+# Groq Whisper — 用於音檔轉中文逐字稿（雲端，上傳即轉）
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
+GROQ_WHISPER_MODEL = os.getenv("GROQ_WHISPER_MODEL", "whisper-large-v3")
+
+
+def transcribe_audio_groq(file_path: str, api_key: str, initial_prompt: str = "") -> dict:
+    """Transcribe audio via Groq's OpenAI-compatible Whisper API (verbose JSON for segments)."""
+    key = (api_key or "").strip() or GROQ_API_KEY
+    if not key:
+        raise RuntimeError("尚未填入 Groq API Key，請點右上角「API 設定」輸入後再試。")
+
+    url = GROQ_BASE_URL.rstrip("/") + "/audio/transcriptions"
+    with open(file_path, "rb") as f:
+        files = {"file": (Path(file_path).name, f)}
+        data = {
+            "model": GROQ_WHISPER_MODEL,
+            "language": "zh",
+            "response_format": "verbose_json",
+        }
+        if initial_prompt:
+            data["prompt"] = initial_prompt
+        resp = http_requests.post(
+            url,
+            headers={"Authorization": f"Bearer {key}"},
+            files=files,
+            data=data,
+            timeout=600,
+        )
+
+    if resp.status_code != 200:
+        try:
+            err = resp.json().get("error", {})
+            msg = err.get("message") if isinstance(err, dict) else err
+        except Exception:
+            msg = resp.text[:200]
+        raise RuntimeError(f"Groq API 錯誤（{resp.status_code}）：{msg}")
+
+    payload = resp.json()
+    segments = []
+    timestamped_lines = []
+    for seg in payload.get("segments", []):
+        start = int(seg.get("start", 0))
+        mm, ss = divmod(start, 60)
+        text = (seg.get("text") or "").strip()
+        segments.append({"start": seg.get("start", 0), "end": seg.get("end", 0), "text": text})
+        timestamped_lines.append(f"[{mm:02d}:{ss:02d}] {text}")
+
+    return {
+        "text": payload.get("text", ""),
+        "timestamped": "\n".join(timestamped_lines),
+        "segments": segments,
+    }
+
 
 def transcribe_audio_remote(file_path: str, colab_url: str, initial_prompt: str = "") -> dict:
     """Send audio to remote Colab Whisper API for transcription."""
@@ -363,18 +417,27 @@ def upload_file():
         if ext in ALLOWED_AUDIO_EXT:
             initial_prompt = request.form.get("initial_prompt", "")
             colab_url = request.form.get("colab_url", "").strip()
+            groq_key = request.form.get("groq_key", "").strip()
 
-            if colab_url:
-                # Use remote Colab Whisper API
+            if groq_key or GROQ_API_KEY:
+                # 主力：Groq Whisper（上傳即轉，不需 Colab）
+                result = transcribe_audio_groq(str(file_path), groq_key, initial_prompt)
+            elif colab_url:
+                # 備援：遠端 Colab Whisper API
                 result = transcribe_audio_remote(str(file_path), colab_url, initial_prompt)
             elif IS_VERCEL:
                 return jsonify({
-                    "error": "雲端版不支援本機語音轉文字。請先在「語音辨識設定」中填入 Colab API URL，或直接上傳文字檔。"
+                    "error": "請先在右上角「API 設定」填入 Groq API Key（推薦），或在下方填入 Colab API URL。"
                 }), 400
             else:
-                # Use local Whisper
+                # 本機 Whisper（僅本機開發環境且未設定 Groq/Colab 時）
                 model_size = request.form.get("whisper_model", "large-v3")
-                result = transcribe_audio_local(str(file_path), model_size, initial_prompt)
+                try:
+                    result = transcribe_audio_local(str(file_path), model_size, initial_prompt)
+                except Exception:
+                    return jsonify({
+                        "error": "請先在右上角「API 設定」填入 Groq API Key（推薦），或在下方填入 Colab API URL。"
+                    }), 400
 
             return jsonify({
                 "text": result["text"],
