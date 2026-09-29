@@ -3,7 +3,8 @@ const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
 const { spawn } = require('node:child_process');
 const { readFile, mkdir } = require('node:fs/promises');
-let server, browser;
+let server, browser, authServer, authFixture;
+const authBase = 'http://127.0.0.1:5057';
 const base = 'http://127.0.0.1:5056';
 const attack = `<img src=x onerror="window.__xss=1">`;
 const roleId = `ads');window.__xss=1;//" autofocus onfocus="window.__xss=1`;
@@ -17,10 +18,28 @@ before(async () => {
   }
   browser = await chromium.launch({ executablePath: process.env.BROWSER_PATH || undefined });
   await mkdir('test-results', { recursive: true });
+  authServer = spawn(process.env.PYTHON || 'python3', ['tests/auth_test_server.py'], { stdio: ['ignore', 'pipe', 'ignore'] });
+  authFixture = await new Promise((resolve, reject) => {
+    let output = '';
+    const timeout = setTimeout(() => reject(new Error('Auth fixture startup timed out')), 10000);
+    authServer.once('error', error => { clearTimeout(timeout); reject(error); });
+    authServer.stdout.on('data', chunk => {
+      output += chunk;
+      if (output.includes('\n')) {
+        clearTimeout(timeout);
+        try { resolve(JSON.parse(output.split('\n')[0])); } catch (error) { reject(error); }
+      }
+    });
+  });
+  for (let i = 0; i < 100; i++) {
+    try { if ((await fetch(authBase + '/login')).ok) break; } catch (_) {}
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
 });
 after(async () => {
   if (browser) await browser.close();
   if (server) server.kill();
+  if (authServer) authServer.kill();
 });
 
 async function pageFor(path) {
@@ -178,6 +197,53 @@ test('KPI review uses real backend, blocks bad/stale inputs, and needs no API ke
     await page.getByRole('button', { name: '確認並產生 AI 月報' }).click();
     await page.locator('#ar-section-info.active').waitFor();
     await page.getByText('資料未通過核對或已變更，請重新核對數據', { exact: true }).waitFor();
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+
+test('company login protects API and pages, keeps keys per user/tab, and clears them on logout', async () => {
+  const page = await browser.newPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  try {
+    const unauthorized = await fetch(authBase + '/api/ad-report/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    assert.equal(unauthorized.status, 401);
+    await page.goto(authBase + '/ad-report');
+    assert.ok(page.url().includes('/login'));
+    await page.getByRole('link', { name: '使用 Google Workspace 登入' }).waitFor();
+    await page.screenshot({ path: 'test-results/company-login.png' });
+    await page.context().addCookies([{ name: 'marketai_session', value: authFixture.cookie, domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' }]);
+    await page.evaluate(() => localStorage.setItem('marketai_deepseek_key', 'legacy-key'));
+    await page.goto(authBase + '/ad-report');
+    assert.equal(await page.evaluate(() => localStorage.getItem('marketai_deepseek_key')), null);
+    await page.getByRole('button', { name: 'API 設定' }).click();
+    await page.fill('#deepseek-key-input', 'fake-tab-key');
+    await page.locator('button[onclick="saveDeepSeekKey()"]').click();
+    assert.equal(await page.evaluate(() => sessionStorage.getItem('marketai_browser-test-user_deepseek_key')), 'fake-tab-key');
+    assert.equal(await page.evaluate(() => localStorage.getItem('marketai_deepseek_key')), null);
+    const status = await page.evaluate(async () => {
+      const response = await fetch('/api/ad-report/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_name: '測試', company_name: '測試', report_month: '2026-09', platforms: { meta: '花費：100' } }) });
+      return response.status;
+    });
+    assert.equal(status, 200); // Common wrapper supplied the real CSRF token.
+    const forged = await page.request.post(authBase + '/api/ad-report/validate', { data: {} });
+    assert.equal(forged.status(), 403); // Raw clients still require CSRF.
+    let leakedHeader;
+    await page.route('https://external.example/**', route => {
+      leakedHeader = route.request().headers()['x-csrf-token'];
+      return route.fulfill({ status: 200, headers: { 'Access-Control-Allow-Origin': '*' }, body: '{}' });
+    });
+    await page.evaluate(() => fetch('https://external.example/check', { method: 'POST', body: 'test' }));
+    assert.equal(leakedHeader, undefined);
+    const logoutResponse = page.waitForResponse(response => response.url().endsWith('/auth/logout'));
+    await page.getByRole('button', { name: '登出', exact: true }).click();
+    const logoutResult = await logoutResponse;
+    assert.equal(logoutResult.status(), 200, await logoutResult.text());
+    await page.getByRole('heading', { name: '已登出 MarketAI' }).waitFor();
+    assert.equal(await page.evaluate(() => sessionStorage.getItem('marketai_browser-test-user_deepseek_key')), null);
+    const loggedOut = await page.request.get(authBase + '/api/work-dispatch/roles');
+    assert.equal(loggedOut.status(), 401);
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });

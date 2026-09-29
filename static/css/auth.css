@@ -1,0 +1,8 @@
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f1f5f9; color: #1e293b; font: 16px/1.7 system-ui, sans-serif; }
+.auth-card { width: min(100%, 460px); padding: 36px; border: 1px solid #dfe5ed; border-radius: 16px; background: white; box-shadow: 0 12px 36px #0f172a0c; }
+h1 { font-size: 24px; }
+.auth-brand { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; color: white; background: #6858fa; font-weight: 700; }
+.auth-button { display: block; margin-top: 24px; padding: 12px 16px; border-radius: 8px; color: white; background: #6858fa; text-align: center; text-decoration: none; }
+[role=alert] { color: #b42318; }
+a:focus-visible { outline: 3px solid #0f172a; outline-offset: 4px; }

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>公司登入 - MarketAI</title>
+  <link rel="stylesheet" href="/static/css/auth.css">
+</head>
+<body>
+  <main class="auth-card">
+    <div class="auth-brand">M</div>
+    <h1>MarketAI 公司登入</h1>
+    {% if message %}<p role="alert">{{ message }}</p>{% endif %}
+    {% if provider %}
+    <p>請使用已獲授權的公司帳號登入。</p>
+    <a class="auth-button" href="{{ url_for('company_auth.start', next=next_path) }}">使用 {{ provider }} 登入</a>
+    {% else %}
+    <a href="/login">返回登入頁</a>
+    {% endif %}
+  </main>
+</body>
+</html>
