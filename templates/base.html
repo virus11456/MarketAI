@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="marketai-auth-enabled" content="{{ 'true' if company_auth_enabled else 'false' }}">
+  <meta name="marketai-user" content="{{ company_user.id if company_user else '' }}">
+  <meta name="csrf-token" content="{{ csrf_token }}">
   <title>{% block title %}MarketAI{% endblock %}</title>
   <link rel="stylesheet" href="/static/css/admin.css">
   <style>
@@ -83,6 +86,13 @@
     </button>
     <h1 class="topbar-title">{% block page_title %}儀表板{% endblock %}</h1>
     <div class="topbar-right">
+      {% if company_user %}
+      <span class="api-settings-status">{{ company_user.name }}</span>
+      <form method="post" action="/auth/logout">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="api-settings-btn" type="submit">登出</button>
+      </form>
+      {% endif %}
       <button type="button" class="api-settings-btn" onclick="toggleApiSettings()">⚙️ API 設定</button>
       <span class="topbar-badge" id="api-badge">需設定 Key</span>
     </div>
@@ -102,7 +112,7 @@
       <input type="password" id="groq-key-input" placeholder="gsk_...">
       <button type="button" class="btn-save-key" onclick="saveGroqKey()">儲存</button>
     </div>
-    <p class="api-settings-hint">會議記錄上傳音檔時用來轉中文逐字稿（免費額度，去 console.groq.com 取得）。Key 儲存在這台瀏覽器（localStorage）。使用時，DeepSeek Key 與分析內容會經本站後端傳送給 DeepSeek；Groq Key 與音檔會直接傳送給 Groq。請勿在共用電腦保存 Key；輸入空白後儲存可清除。</p>
+    <p class="api-settings-hint">會議記錄上傳音檔時用來轉中文逐字稿（免費額度，去 console.groq.com 取得）。{% if company_auth_enabled %}Key 僅儲存在這個分頁，依登入帳號隔離；登出時清除。{% else %}Key 儲存在這台瀏覽器（localStorage）。{% endif %}使用時，DeepSeek Key 與分析內容會經本站後端傳送給 DeepSeek；Groq Key 與音檔會直接傳送給 Groq。請勿在共用電腦保存 Key；輸入空白後儲存可清除。</p>
     <span class="api-settings-status" id="deepseek-key-status"></span>
   </div>
 
@@ -130,7 +140,7 @@ function toggleSidebar() {
 
 // --- DeepSeek API Key (manual, stored in this browser only) ---
 function getDeepSeekKey() {
-  return (localStorage.getItem('marketai_deepseek_key') || '').trim();
+  return (marketaiKeyStorage().getItem(marketaiKeyName('deepseek')) || '').trim();
 }
 function updateApiBadge() {
   const badge = document.getElementById('api-badge');
@@ -144,7 +154,7 @@ function updateApiBadge() {
   }
 }
 function getGroqKey() {
-  return (localStorage.getItem('marketai_groq_key') || '').trim();
+  return (marketaiKeyStorage().getItem(marketaiKeyName('groq')) || '').trim();
 }
 function toggleApiSettings() {
   const panel = document.getElementById('api-settings-panel');
@@ -158,14 +168,14 @@ function toggleApiSettings() {
 }
 function saveDeepSeekKey() {
   const val = document.getElementById('deepseek-key-input').value.trim();
-  localStorage.setItem('marketai_deepseek_key', val);
+  marketaiKeyStorage().setItem(marketaiKeyName('deepseek'), val);
   const status = document.getElementById('deepseek-key-status');
   if (status) status.textContent = val ? 'DeepSeek 已儲存 ✓' : '已清除';
   updateApiBadge();
 }
 function saveGroqKey() {
   const val = document.getElementById('groq-key-input').value.trim();
-  localStorage.setItem('marketai_groq_key', val);
+  marketaiKeyStorage().setItem(marketaiKeyName('groq'), val);
   const status = document.getElementById('deepseek-key-status');
   if (status) status.textContent = val ? 'Groq 已儲存 ✓' : 'Groq 已清除';
 }
