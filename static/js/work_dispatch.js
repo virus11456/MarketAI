@@ -31,13 +31,19 @@ function renderRolesGrid() {
     const selected = wdSelectedRoles.has(r.id) ? 'selected' : '';
     const custom = r.custom ? 'custom' : '';
     return `
-      <div class="role-card ${selected} ${custom}" data-role-id="${r.id}" onclick="wdToggleRole('${r.id}')">
-        ${r.custom ? `<span class="role-remove" onclick="event.stopPropagation(); wdRemoveRole('${r.id}')">✕</span>` : ''}
-        <div class="role-icon">${r.icon}</div>
-        <div class="role-name">${r.name}</div>
-        <div class="role-desc">${r.desc}</div>
+      <div class="role-card ${selected} ${custom}" data-role-id="${escapeHtml(r.id)}">
+        ${r.custom ? `<span class="role-remove" data-remove-role="true">✕</span>` : ''}
+        <div class="role-icon">${escapeHtml(r.icon)}</div>
+        <div class="role-name">${escapeHtml(r.name)}</div>
+        <div class="role-desc">${escapeHtml(r.desc)}</div>
       </div>`;
   }).join('');
+  grid.onclick = event => {
+    const card = event.target.closest('[data-role-id]');
+    if (!card) return;
+    if (event.target.closest('[data-remove-role]')) wdRemoveRole(card.dataset.roleId);
+    else wdToggleRole(card.dataset.roleId);
+  };
 }
 
 function wdToggleRole(id) {
@@ -46,7 +52,7 @@ function wdToggleRole(id) {
   } else {
     wdSelectedRoles.add(id);
   }
-  const card = document.querySelector(`.role-card[data-role-id="${id}"]`);
+  const card = Array.from(document.querySelectorAll('.role-card')).find(card => card.dataset.roleId === id);
   if (card) card.classList.toggle('selected');
 }
 
@@ -64,8 +70,8 @@ function wdAddCustomRole() {
     return;
   }
 
-  const id = 'custom_' + name.toLowerCase().replace(/\s+/g, '_');
-  if (wdRoles.find(r => r.id === id)) {
+  const id = 'custom_' + crypto.randomUUID().replace(/-/g, '');
+  if (wdRoles.find(r => r.name === name)) {
     showToast('此角色已存在', 'error');
     return;
   }
@@ -248,19 +254,19 @@ function renderDispatchResults(data) {
   // Summary header
   html += `
     <div class="dispatch-summary">
-      <h3>${data.project_name || '專案'}</h3>
-      <div class="summary-text">${data.summary || ''}</div>
+      <h3>${escapeHtml(data.project_name || '專案')}</h3>
+      <div class="summary-text">${escapeHtml(data.summary || '')}</div>
       <div class="summary-stats">
         <div class="stat-item">
-          <div class="stat-num">${totalPackages}</div>
+          <div class="stat-num">${escapeHtml(totalPackages)}</div>
           <div class="stat-label">工作包</div>
         </div>
         <div class="stat-item">
-          <div class="stat-num">${totalRoles}</div>
+          <div class="stat-num">${escapeHtml(totalRoles)}</div>
           <div class="stat-label">參與角色</div>
         </div>
         <div class="stat-item">
-          <div class="stat-num">${totalDays}</div>
+          <div class="stat-num">${escapeHtml(totalDays)}</div>
           <div class="stat-label">預估總工作天</div>
         </div>
       </div>
@@ -279,10 +285,10 @@ function renderDispatchResults(data) {
     const roleObj = wdRoles.find(r => r.id === rs.role_id);
     const icon = roleObj ? roleObj.icon : '👤';
     html += `
-      <div class="role-summary-card" onclick="wdFilterByRole('${rs.role_id}')">
-        <div class="rs-icon">${icon}</div>
-        <div class="rs-name">${rs.role_name}</div>
-        <div class="rs-stats">${rs.package_count} 個工作包 · ${rs.total_days} 天</div>
+      <div class="role-summary-card" data-filter-role="${escapeHtml(rs.role_id)}">
+        <div class="rs-icon">${escapeHtml(icon)}</div>
+        <div class="rs-name">${escapeHtml(rs.role_name)}</div>
+        <div class="rs-stats">${escapeHtml(rs.package_count)} 個工作包 · ${escapeHtml(rs.total_days)} 天</div>
       </div>`;
   });
   html += '</div>';
@@ -292,7 +298,7 @@ function renderDispatchResults(data) {
   (data.role_summary || []).forEach(rs => {
     const roleObj = wdRoles.find(r => r.id === rs.role_id);
     const icon = roleObj ? roleObj.icon : '👤';
-    html += `<div class="wp-section-title" id="role-${rs.role_id}">${icon} ${rs.role_name} (${rs.package_count} 個工作包)</div>`;
+    html += `<div class="wp-section-title" id="role-${escapeHtml(rs.role_id)}">${escapeHtml(icon)} ${escapeHtml(rs.role_name)} (${escapeHtml(rs.package_count)} 個工作包)</div>`;
 
     const packages = (data.work_packages || []).filter(wp => wp.assigned_to === rs.role_id);
     packages.forEach(wp => {
@@ -313,7 +319,7 @@ function renderDispatchResults(data) {
     html += `
       <div class="timeline-box">
         <h3>建議時程安排</h3>
-        <p>${data.timeline_suggestion}</p>
+        <p>${escapeHtml(data.timeline_suggestion)}</p>
       </div>`;
   }
 
@@ -322,54 +328,57 @@ function renderDispatchResults(data) {
     html += `
       <div class="timeline-box">
         <h3>整體注意事項</h3>
-        <p>${data.notes}</p>
+        <p>${escapeHtml(data.notes)}</p>
       </div>`;
   }
 
   container.innerHTML = html;
+  container.querySelectorAll('[data-filter-role]').forEach(card => {
+    card.addEventListener('click', () => wdFilterByRole(card.dataset.filterRole));
+  });
 }
 
 function renderWorkPackage(wp, showRole) {
-  const priorityClass = (wp.priority || 'medium').toLowerCase();
+  const priorityClass = ['high', 'medium', 'low'].includes(wp.priority) ? wp.priority : 'medium';
   const priorityLabel = { high: '高', medium: '中', low: '低' }[priorityClass] || wp.priority;
 
   let html = `
     <div class="wp-card">
       <div class="wp-header">
-        <span class="wp-id">${wp.id}</span>
-        <span class="wp-name">${wp.name}</span>
-        <span class="wp-priority ${priorityClass}">${priorityLabel}</span>
+        <span class="wp-id">${escapeHtml(wp.id)}</span>
+        <span class="wp-name">${escapeHtml(wp.name)}</span>
+        <span class="wp-priority ${escapeHtml(priorityClass)}">${escapeHtml(priorityLabel)}</span>
       </div>
       <div class="wp-meta">`;
 
   if (showRole) {
-    html += `<span>👤 ${wp.assigned_role_name || wp.assigned_to}</span>`;
+    html += `<span>👤 ${escapeHtml(wp.assigned_role_name || wp.assigned_to)}</span>`;
   }
-  html += `<span>⏱ ${wp.estimated_days || '?'} 天</span>`;
+  html += `<span>⏱ ${escapeHtml(wp.estimated_days || '?')} 天</span>`;
   if (wp.module) {
-    html += `<span>🗂 ${wp.module}</span>`;
+    html += `<span>🗂 ${escapeHtml(wp.module)}</span>`;
   }
   if (wp.amount) {
-    html += `<span>💰 ${wp.amount}</span>`;
+    html += `<span>💰 ${escapeHtml(wp.amount)}</span>`;
   }
   html += `
       </div>
-      <div class="wp-desc">${wp.description || ''}</div>`;
+      <div class="wp-desc">${escapeHtml(wp.description || '')}</div>`;
 
   if (wp.deliverables && wp.deliverables.length > 0) {
     html += `
       <div class="wp-deliverables">
         <h5>交付物：</h5>
-        <ul>${wp.deliverables.map(d => `<li>${d}</li>`).join('')}</ul>
+        <ul>${wp.deliverables.map(d => `<li>${escapeHtml(d)}</li>`).join('')}</ul>
       </div>`;
   }
 
   if (wp.dependencies && wp.dependencies.length > 0 && wp.dependencies[0]) {
-    html += `<div class="wp-deps">依賴：${wp.dependencies.join(', ')}</div>`;
+    html += `<div class="wp-deps">依賴：${escapeHtml(wp.dependencies.join(', '))}</div>`;
   }
 
   if (wp.notes) {
-    html += `<div class="wp-notes">${wp.notes}</div>`;
+    html += `<div class="wp-notes">${escapeHtml(wp.notes)}</div>`;
   }
 
   html += '</div>';
@@ -380,7 +389,8 @@ function renderWorkPackage(wp, showRole) {
 function wdSwitchView(mode) {
   const btns = document.querySelectorAll('.view-toggle button');
   btns.forEach(b => b.classList.remove('active'));
-  event.target.classList.add('active');
+  const button = document.querySelectorAll('.view-toggle button')[mode === 'role' ? 0 : 1];
+  if (button) button.classList.add('active');
 
   document.querySelectorAll('.view-section').forEach(s => s.classList.remove('active'));
   document.getElementById(`wd-view-${mode}`).classList.add('active');
@@ -413,13 +423,7 @@ async function wdExportDocx() {
       body: JSON.stringify(wdResult)
     });
 
-    const data = await res.json();
-    if (data.error) {
-      showToast(data.error, 'error');
-      return;
-    }
-
-    window.location.href = `/api/download/${data.filename}`;
+    await downloadDocxResponse(res, '工作分派.docx');
     showToast('DOCX 已開始下載', 'success');
   } catch (err) {
     showToast('匯出失敗：' + err.message, 'error');

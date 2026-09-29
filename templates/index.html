@@ -48,9 +48,10 @@
             <div class="colab-row">
               <div class="form-group" style="flex:1;">
                 <label>Colab Whisper API URL</label>
-                <input type="text" id="colab-url"
+                <input type="text" aria-describedby="colab-security-hint" id="colab-url"
                   placeholder="例：https://xxxx-xx-xx.ngrok-free.app"
                   value="">
+                <p id="colab-security-hint" class="api-settings-hint">Colab 備援需由管理員啟用；請填入管理員核准的服務網址。</p>
               </div>
               <button class="btn btn-secondary" onclick="testColabConnection()" id="btn-test-colab" style="margin-top:22px; white-space:nowrap;">
                 測試連線

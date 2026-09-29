@@ -273,12 +273,7 @@ async function exportNotesDocx() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ notes: meetingNotes, title: '會議記錄' })
     });
-    const data = await res.json();
-    if (data.error) {
-      showToast(data.error, 'error');
-      return;
-    }
-    window.location.href = `/api/download/${data.filename}`;
+    await downloadDocxResponse(res, '會議記錄.docx');
     showToast('DOCX 已開始下載', 'success');
   } catch (err) {
     showToast('匯出失敗：' + err.message, 'error');
