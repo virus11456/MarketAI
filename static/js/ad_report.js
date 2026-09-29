@@ -1,5 +1,7 @@
 // State
 let arReportResult = null;
+let arAuditPayload = null;
+let arAudit = null;
 const activePlatforms = new Set(['meta', 'google']);
 
 const PLATFORM_CONFIG = {
@@ -12,7 +14,7 @@ const PLATFORM_CONFIG = {
 // --- Step Navigation ---
 // Steps in the UI: 1 填寫資料, 3 AI 產出月報, 4 檢視與匯出
 function arSetStep(num) {
-  [1, 3, 4].forEach(i => {
+  [1, 2, 3, 4].forEach(i => {
     const el = document.getElementById(`ar-step${i}`);
     if (!el) return;
     el.classList.remove('active', 'done');
@@ -27,6 +29,7 @@ function arGoToStep(num) {
 
   const sectionMap = {
     1: 'ar-section-info',
+    2: 'ar-section-review',
     4: 'ar-section-results'
   };
 
@@ -67,13 +70,24 @@ function addPlatformPanel(platform) {
         <h3>${escapeHtml(config.icon)} ${escapeHtml(config.label)} 廣告數據</h3>
         <button class="btn-icon" onclick="removePlatformPanel('${platform}')" title="移除">✕</button>
       </div>
+      <div class="form-grid" style="margin-bottom:12px;">
+        <label>資料幣別（與原始資料一致）
+          <select class="platform-currency">
+            <option value="">未確認</option>
+            ${['TWD', 'USD', 'HKD', 'JPY', 'EUR', 'CNY', 'GBP', 'SGD', 'AUD', 'CAD'].map(code => `<option value="${code}">${code}</option>`).join('')}
+          </select>
+        </label>
+        <label>成果定義（各列須一致）
+          <input class="platform-conversion-type" maxlength="100" placeholder="例：purchase、訊息對話；無成果可留空">
+        </label>
+      </div>
       <div class="input-toggle" style="margin-bottom:12px;">
         <button class="active" onclick="togglePanelInput(this, '${platform}', 'upload')">上傳檔案</button>
         <button onclick="togglePanelInput(this, '${platform}', 'paste')">貼上數據</button>
       </div>
       <div class="panel-input-upload" id="${platform}-upload">
         <div class="upload-zone mini-upload">
-          <input type="file" accept=".csv,.xlsx,.xls,.txt" onchange="handlePlatformFile(this, '${platform}')">
+          <input type="file" accept=".csv,.xlsx,.txt" onchange="handlePlatformFile(this, '${platform}')">
           <p><strong>上傳 ${escapeHtml(config.label)} 後台匯出的 CSV / Excel</strong></p>
         </div>
         <div class="file-info" id="${platform}-file-info" style="display:none;">
@@ -171,47 +185,99 @@ async function handlePlatformFile(input, platform) {
   }
 }
 
-// --- Processing ---
-async function arStartProcessing() {
-  // Validate basic info (now on the same page)
-  const client = document.getElementById('client-name').value.trim();
-  const company = document.getElementById('company-name').value.trim();
-  const month = document.getElementById('report-month').value;
-  if (!client || !company || !month) {
-    showToast('請填寫客戶名稱、公司名稱與報告月份', 'error');
-    return;
-  }
-
-  // Collect data
-  const platformsData = Object.create(null);
-  let hasData = false;
-
+// --- Validate locally entered data before paying for an AI report. ---
+function arCollectReport() {
+  const platforms = Object.create(null);
+  const metadata = Object.create(null);
   activePlatforms.forEach(platform => {
-    const textarea = document.querySelector(`#panel-${platform} .platform-data`);
-    if (textarea && textarea.value.trim()) {
-      const label = platform.startsWith('custom_') ? PLATFORM_CONFIG[platform].label : platform;
-      platformsData[label] = textarea.value.trim();
-      hasData = true;
-    }
+    const panel = document.getElementById(`panel-${platform}`);
+    const text = panel?.querySelector('.platform-data').value.trim();
+    if (!text) return;
+    const label = platform.startsWith('custom_') ? PLATFORM_CONFIG[platform].label : platform;
+    platforms[label] = text;
+    metadata[label] = {
+      currency: panel.querySelector('.platform-currency').value,
+      conversion_type: panel.querySelector('.platform-conversion-type').value.trim()
+    };
   });
-
-  if (!hasData) {
-    showToast('請至少輸入一個平台的數據', 'error');
-    return;
-  }
-  if (!getDeepSeekKey()) {
-    showToast('請先點右上角「API 設定」填入 DeepSeek API Key', 'error');
-    toggleApiSettings();
-    return;
-  }
-
-  const payload = {
+  return {
     client_name: document.getElementById('client-name').value.trim(),
     company_name: document.getElementById('company-name').value.trim(),
     report_month: document.getElementById('report-month').value,
-    platforms: platformsData,
-    api_key: getDeepSeekKey()
+    platforms,
+    platform_metadata: metadata,
+    period_confirmed: document.getElementById('ar-period-confirmed').checked
   };
+}
+
+async function arStartProcessing() {
+  const payload = arCollectReport();
+  if (!payload.client_name || !payload.company_name || !payload.report_month || !Object.keys(payload.platforms).length) {
+    showToast('請填寫客戶、公司、月份，並至少輸入一個平台的數據', 'error');
+    return;
+  }
+  arAudit = null;
+  arAuditPayload = null;
+  showLoading('核對來源與計算指標中（不使用 AI 額度）...');
+  try {
+    const res = await fetch('/api/ad-report/validate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    });
+    const audit = await res.json();
+    if (!res.ok || audit.error) throw new Error(audit.error || '資料核對失敗');
+    // A response for stale input must never approve a newer draft.
+    if (JSON.stringify(payload) !== JSON.stringify(arCollectReport())) throw new Error('資料已變更，請重新核對。');
+    arAuditPayload = payload;
+    arAudit = audit;
+    renderAudit(audit);
+    document.getElementById('ar-review-confirmed').checked = false;
+    document.getElementById('ar-generate-button').disabled = !audit.valid;
+    arGoToStep(2);
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally { hideLoading(); }
+}
+
+function renderAudit(audit) {
+  const labels = { spend: '花費', impressions: '曝光', clicks: '點擊', conversions: '成果', revenue: '轉換價值', ctr: 'CTR (%)', cpc: 'CPC', cpm: 'CPM', cpa: 'CPA', roas: 'ROAS' };
+  let html = `<ul>${audit.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}</ul>`;
+  audit.platforms.forEach(entry => {
+    const label = PLATFORM_CONFIG[entry.platform]?.label || entry.platform;
+    html += `<div class="report-section"><h3>${escapeHtml(label)}</h3>`;
+    html += `<p>幣別：${escapeHtml(entry.currency || '未確認')} · 成果定義：${escapeHtml(entry.conversion_type || '未確認')}</p>`;
+    if (entry.errors.length) html += `<div role="alert" class="audit-errors"><strong>請先修正</strong><ul>${entry.errors.map(e => `<li>${escapeHtml(e)}</li>`).join('')}</ul></div>`;
+    html += `<table><thead><tr><th>指標</th><th>程式計算值</th><th>計算依據／限制</th></tr></thead><tbody>`;
+    Object.entries(labels).forEach(([key, title]) => {
+      html += `<tr><td>${title}</td><td>${escapeHtml(entry.metrics[key] ?? '未計算')}</td><td>${escapeHtml(entry.reasons[key] || audit.formulas[key] || '納入明細列加總')}</td></tr>`;
+    });
+    html += `</tbody></table><ul>${entry.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}</ul>`;
+    html += `<p>納入來源行：${escapeHtml(entry.rows.flatMap(row => row.source_lines).join(', ')) || '無'}；排除總計行：${escapeHtml(entry.excluded_total_lines.join(', ')) || '無'}</p>`;
+    const source = arAuditPayload.platforms[entry.platform].split('\n').map((line, i) => `${i + 1}: ${line}`).join('\n');
+    html += `<details><summary>檢視原始資料與行號</summary><pre class="audit-source">${escapeHtml(source)}</pre></details></div>`;
+  });
+  document.getElementById('ar-audit-content').innerHTML = html;
+}
+
+async function arGenerateReport() {
+  if (!arAudit?.valid || !arAuditPayload || JSON.stringify(arAuditPayload) !== JSON.stringify(arCollectReport())) {
+    showToast('資料未通過核對或已變更，請重新核對數據', 'error');
+    arGoToStep(1);
+    return;
+  }
+  if (!arAuditPayload.period_confirmed) {
+    showToast('請返回資料頁確認各平台資料期間與報告月份一致，再重新核對', 'error');
+    return;
+  }
+  if (!document.getElementById('ar-review-confirmed').checked) {
+    showToast('請先核對數字及待確認事項，勾選確認後再產生月報', 'error');
+    return;
+  }
+  if (!getDeepSeekKey()) {
+    showToast('請在 API 設定填入 DeepSeek Key 後再產生月報', 'error');
+    toggleApiSettings();
+    return;
+  }
+  const payload = { ...arAuditPayload, audit_fingerprint: arAudit.fingerprint, api_key: getDeepSeekKey() };
 
   arSetStep(3);
   showLoading('AI 正在分析廣告數據並產出月報...');
