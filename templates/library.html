@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}MarketAI - 我的專案與文件{% endblock %}
+{% block page_title %}我的專案與文件{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>客戶與專案</h2>
+  <p>目前僅本人可存取。先建立客戶、專案，再到工具頁儲存草稿或結果。</p>
+  {% if library_available %}
+  <div class="library-grid">
+    <form id="library-client-form"><label>新客戶名稱<input id="library-client-name" maxlength="150" required></label><button class="btn btn-primary">新增客戶</button></form>
+    <form id="library-project-form"><label>所屬客戶<select id="library-client" required></select></label><label>新專案名稱<input id="library-project-name" maxlength="150" required></label><button class="btn btn-primary">新增專案</button></form>
+  </div>
+  {% else %}
+  <p role="status">專案保存尚未啟用。管理員需完成公司登入與資料庫設定。</p>
+  {% endif %}
+</div>
+{% if library_available %}
+<div class="card">
+  <h2>文件歷史</h2>
+  <form id="library-search" class="library-grid"><label>專案<select id="library-filter"><option value="">所有專案</option></select></label><label>文件名稱<input id="library-query" maxlength="150"></label><button class="btn btn-primary">查詢</button></form>
+  <p id="library-message" role="status"></p>
+  <div id="library-documents"></div>
+  <button id="library-more" class="btn btn-secondary" hidden>載入更多</button>
+</div>
+{% endif %}
+{% endblock %}

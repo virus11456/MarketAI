@@ -247,3 +247,166 @@ test('company login protects API and pages, keeps keys per user/tab, and clears 
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });
+
+async function libraryPage(path = '/library') {
+  const page = await browser.newPage();
+  page.on('dialog', dialog => dialog.accept());
+  await page.context().addCookies([{ name: 'marketai_session', value: authFixture.cookie, domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' }]);
+  await page.goto(authBase + path);
+  return page;
+}
+async function libraryProject(page, suffix) {
+  await page.fill('#library-client-name', '客戶 ' + suffix);
+  await page.getByRole('button', { name: '新增客戶', exact: true }).click();
+  await page.getByText('客戶已新增。', { exact: true }).waitFor();
+  await page.selectOption('#library-client', { label: '客戶 ' + suffix });
+  await page.fill('#library-project-name', '專案 ' + suffix);
+  await page.getByRole('button', { name: '新增專案', exact: true }).click();
+  await page.getByText('專案已新增。', { exact: true }).waitFor();
+  return page.locator('#library-filter option').filter({ hasText: '專案 ' + suffix }).getAttribute('value');
+}
+async function saveDocument(page, version) {
+  await page.getByRole('button', { name: '儲存版本', exact: true }).click();
+  await page.locator('#document-status').filter({ hasText: `已儲存版本 ${version}。` }).waitFor();
+}
+
+test('project library saves meeting drafts and edits, reopens versions, exports, and blocks stale saves', async () => {
+  const page = await libraryPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  let stale;
+  try {
+    const project = await libraryProject(page, '會議');
+    await page.goto(authBase + '/meeting');
+    await page.selectOption('#document-project', project);
+    await page.fill('#document-title', '測試會議 ' + attack);
+    await page.getByRole('button', { name: '直接貼上逐字稿', exact: true }).click();
+    await page.fill('#meeting-text', '客戶希望下週完成素材。');
+    await saveDocument(page, 1);
+    const url = page.url();
+    await page.reload();
+    await page.locator('#document-status').filter({ hasText: '已開啟版本 1' }).waitFor();
+    assert.equal(await page.locator('#transcribed-text').inputValue(), '客戶希望下週完成素材。');
+    await page.getByRole('button', { name: 'API 設定' }).click();
+    await page.fill('#deepseek-key-input', 'fixture-secret-not-saved');
+    await page.locator('button[onclick="saveDeepSeekKey()"]').click();
+    await page.getByRole('button', { name: 'API 設定' }).click();
+    await page.route('**/api/meeting/organize', route => route.fulfill({ json: { notes: '# 會議記錄\n原始結論' } }));
+    await page.getByRole('button', { name: '整理成會議記錄', exact: false }).click();
+    await page.locator('#notes-content').filter({ hasText: '原始結論' }).waitFor();
+    await page.locator('#document-edit summary').click();
+    await page.locator('.library-editor').fill('# 修訂記錄\n' + attack);
+    await saveDocument(page, 2); // Save also applies edited text without requiring a separate click.
+    const id = new URL(page.url()).searchParams.get('document');
+    const stored = await page.evaluate(async id => (await (await fetch('/api/library/documents/' + id)).json()), id);
+    assert.ok(!JSON.stringify(stored).includes('fixture-secret-not-saved'));
+    assert.ok(stored.snapshot.result.notes.includes(attack));
+    stale = await libraryPage(new URL(url).pathname + new URL(url).search);
+    await stale.locator('#document-status').filter({ hasText: '已開啟版本 2' }).waitFor();
+    await page.reload();
+    await page.locator('#document-status').filter({ hasText: '已開啟版本 2' }).waitFor();
+    await assertSafe(page, '#notes-content');
+    await download(page, page.getByRole('button', { name: '匯出 DOCX', exact: false }), '會議記錄.docx');
+    await page.fill('#document-title', '第三版');
+    await saveDocument(page, 3);
+    await stale.fill('#document-title', '過期編輯');
+    await stale.getByRole('button', { name: '儲存版本', exact: true }).click();
+    await stale.locator('#document-status').filter({ hasText: '其他分頁已儲存新版本' }).waitFor();
+    await page.goto(authBase + '/library');
+    await page.fill('#library-query', '第三版');
+    await page.getByRole('button', { name: '查詢', exact: true }).click();
+    await page.getByRole('heading', { name: '第三版', exact: true }).waitFor();
+    await page.getByRole('button', { name: '版本歷史', exact: true }).click();
+    await page.getByRole('link', { name: '開啟版本 1', exact: true }).click();
+    await page.locator('#document-status').filter({ hasText: '已開啟版本 1（最新版本 3）' }).waitFor();
+    assert.equal(await page.locator('#document-title').inputValue(), '測試會議 ' + attack);
+    await page.goto(authBase + '/library');
+    await page.screenshot({ path: 'test-results/project-library.png', fullPage: true });
+    assert.deepEqual(errors, []);
+  } finally { if (stale) await stale.close(); await page.close(); }
+});
+
+test('ad report and dispatch drafts round-trip including custom platforms and roles', async () => {
+  const page = await libraryPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  try {
+    const project = await libraryProject(page, '月報與工作包');
+    await page.goto(authBase + '/ad-report');
+    await page.selectOption('#document-project', project);
+    await page.fill('#document-title', '廣告草稿');
+    await page.fill('#client-name', '品牌');
+    await page.fill('#company-name', '公司');
+    await page.fill('#report-month', '2026-09');
+    await page.getByText('其他平台', { exact: false }).click({ trial: true });
+    // Prompt dialogs need a supplied platform name for this flow.
+    page.removeAllListeners('dialog');
+    page.once('dialog', dialog => dialog.accept(attack));
+    await page.getByText('其他平台', { exact: false }).click();
+    page.on('dialog', dialog => dialog.accept());
+    const custom = page.locator('.platform-panel').last();
+    await custom.getByRole('button', { name: '貼上數據' }).click();
+    await custom.locator('textarea').fill('花費：100\n曝光：1000\n點擊：10');
+    await custom.locator('.platform-currency').selectOption('TWD');
+    await saveDocument(page, 1);
+    await page.reload();
+    await page.locator('#document-status').filter({ hasText: '已開啟版本 1' }).waitFor();
+    assert.equal(await page.locator('.platform-data').count(), 1);
+    assert.equal(await page.locator('.platform-data').inputValue(), '花費：100\n曝光：1000\n點擊：10');
+    await assertSafe(page, '#platform-panels');
+    assert.equal(await page.locator('#ar-period-confirmed').isChecked(), false);
+    await page.check('#ar-period-confirmed');
+    await page.getByRole('button', { name: '核對數據（不使用 AI 額度）' }).click();
+    await page.locator('#ar-section-review.active').waitFor();
+    await page.getByRole('button', { name: 'API 設定' }).click();
+    await page.fill('#deepseek-key-input', 'fixture-key');
+    await page.locator('button[onclick="saveDeepSeekKey()"]').click();
+    await page.getByRole('button', { name: 'API 設定' }).click();
+    const metricPrefix = '### 程式計算指標\n| 花費 | 100 |\n\n### AI 解讀（需人工覆核）\n';
+    await page.route('**/api/ad-report/process', route => route.fulfill({ json: {
+      cover: { title: '月報', client_name: '品牌' },
+      sections: [{ id: 'platform_0', title: '平台解讀', content: metricPrefix + '原始分析' }],
+      closing: { title: '覆核', content: '待覆核' }
+    } }));
+    await page.check('#ar-review-confirmed');
+    await page.getByRole('button', { name: '確認並產生 AI 月報' }).click();
+    await page.locator('#ar-section-results.active').waitFor();
+    await page.locator('#document-edit summary').click();
+    assert.equal(await page.locator('.library-editor').first().inputValue(), '原始分析');
+    await page.locator('.library-editor').first().fill('更新分析');
+    await saveDocument(page, 2);
+    await page.reload();
+    await page.locator('#document-status').filter({ hasText: '已開啟版本 2' }).waitFor();
+    assert.ok((await page.locator('#ar-report-content').textContent()).includes('更新分析'));
+    assert.ok((await page.locator('#ar-report-content').textContent()).includes('100'));
+    await download(page, page.getByRole('button', { name: '匯出 DOCX', exact: false }), '廣告月報.docx');
+    await page.goto(authBase + '/work-dispatch');
+    await page.selectOption('#document-project', project);
+    await page.fill('#document-title', '工作包草稿');
+    await page.fill('#wd-project-name', '秋季活動');
+    await page.fill('#wd-quotation-text', '製作三張宣傳圖');
+    await page.getByRole('button', { name: '下一步', exact: false }).click();
+    await page.fill('#wd-new-role-name', attack);
+    await page.fill('#wd-new-role-desc', '視覺設計');
+    await page.getByRole('button', { name: '新增角色', exact: false }).click();
+    await saveDocument(page, 1);
+    await page.reload();
+    await page.locator('#document-status').filter({ hasText: '已開啟版本 1' }).waitFor();
+    assert.equal(await page.locator('#wd-quotation-text').inputValue(), '製作三張宣傳圖');
+    await page.getByRole('button', { name: '下一步', exact: false }).click();
+    await assertSafe(page, '#wd-roles-grid');
+    await page.route('**/api/work-dispatch/process', route => route.fulfill({ json: {
+      project_name: '秋季活動', summary: '提案摘要', role_summary: [],
+      work_packages: [{ id: 'wp1', name: '素材設計', description: '設計初稿', estimated_days: 2 }]
+    } }));
+    await page.getByRole('button', { name: '開始拆分', exact: false }).click();
+    await page.locator('#wd-section-results.active').waitFor();
+    await saveDocument(page, 2);
+    await page.reload();
+    await page.locator('#document-status').filter({ hasText: '已開啟版本 2' }).waitFor();
+    await page.getByRole('button', { name: '全部工作包', exact: true }).click();
+    assert.ok((await page.locator('#wd-view-all').textContent()).includes('設計初稿'));
+    await download(page, page.getByRole('button', { name: '匯出 DOCX', exact: false }), '工作分派.docx');
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
