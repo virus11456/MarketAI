@@ -17,7 +17,7 @@ from authlib.integrations.flask_client import OAuth
 from flask import Blueprint, g, jsonify, redirect, render_template, request, session
 
 PUBLIC_ENDPOINTS = {'static', 'company_auth.login', 'company_auth.start', 'company_auth.callback', 'company_auth.logout'}
-PAGE_PATHS = {'/', '/meeting', '/ad-report', '/work-dispatch'}
+PAGE_PATHS = {'/', '/meeting', '/ad-report', '/work-dispatch', '/library'}
 
 
 def settings_from_env(environ):

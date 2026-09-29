@@ -297,6 +297,7 @@ async function arGenerateReport() {
     }
 
     arReportResult = data;
+    if (typeof libraryMarkGenerated === 'function') libraryMarkGenerated();
     renderAdReport(data);
     arGoToStep(4);
     showToast('月報產出完成！', 'success');

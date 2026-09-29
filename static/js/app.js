@@ -242,6 +242,7 @@ async function organizeNotes() {
       return;
     }
     meetingNotes = data.notes;
+    if (typeof libraryMarkGenerated === 'function') libraryMarkGenerated();
     document.getElementById('notes-content').innerHTML = markdownToHtml(meetingNotes);
     goToStep(3);
     showToast('會議記錄整理完成！', 'success');

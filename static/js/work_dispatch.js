@@ -4,6 +4,9 @@ let wdResult = null;
 let wdRoles = [];
 let wdSelectedRoles = new Set();
 
+let wdReadyResolve;
+window.wdReady = new Promise(resolve => { wdReadyResolve = resolve; });
+
 // --- Init ---
 document.addEventListener('DOMContentLoaded', async () => {
   try {
@@ -14,7 +17,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderRolesGrid();
   } catch (err) {
     console.error('Failed to load roles:', err);
-  }
+  } finally { wdReadyResolve(); }
 
   // File upload handler
   const fileInput = document.getElementById('wd-file-input');
@@ -229,6 +232,7 @@ async function wdStartProcessing() {
     }
 
     wdResult = data;
+    if (typeof libraryMarkGenerated === 'function') libraryMarkGenerated();
     renderDispatchResults(data);
     wdGoToStep(4);
     showToast('工作包拆分完成！', 'success');

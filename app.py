@@ -14,6 +14,7 @@ from flask import Flask, render_template, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 from ad_metrics import audit_report, metrics_markdown
 from company_auth import init_company_auth
+from project_library import init_project_library
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -23,6 +24,7 @@ IS_VERCEL = os.getenv("VERCEL", "") == "1"
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret-key")
 init_company_auth(app)
+init_project_library(app)
 
 if IS_VERCEL:
     UPLOAD_FOLDER = Path("/tmp/uploads")

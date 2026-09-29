@@ -1,0 +1,14 @@
+{% if library_available and active_page in ['meeting', 'ad_report', 'work_dispatch'] %}
+<details class="card library-toolbar" id="library-toolbar" open>
+  <summary>儲存至我的專案</summary>
+  <p>手動儲存草稿與目前結果，每次儲存都保留新版本；不保存音檔或 API Key。</p>
+  <div class="library-grid">
+    <label>專案<select id="document-project"><option value="">請選擇專案</option></select></label>
+    <label>文件名稱<input id="document-title" maxlength="150" placeholder="例如：九月廣告月報"></label>
+    <button type="button" id="document-save" class="btn btn-primary">儲存版本</button>
+    <a href="/library" target="_blank" rel="noopener">管理專案與歷史紀錄</a>
+  </div>
+  <p id="document-status" role="status">尚未儲存</p>
+  <details id="document-edit" hidden><summary>編輯結果文字</summary><p>修改文字後再儲存。月報指標仍由原始數據重新核對，不在此修改。</p><div id="document-edit-fields"></div><button type="button" class="btn btn-secondary" id="document-edit-apply">套用文字修改</button></details>
+</details>
+{% endif %}

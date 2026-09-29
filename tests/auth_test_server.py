@@ -8,13 +8,20 @@ import os
 import secrets
 import sys
 import time
+import tempfile
+import atexit
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.update(AUTH_MODE='google', AUTH_BASE_URL='http://127.0.0.1:5057',
                   AUTH_GOOGLE_DOMAINS='test.invalid', OIDC_CLIENT_ID='browser-test-client',
                   OIDC_CLIENT_SECRET='browser-test-secret', FLASK_SECRET_KEY=secrets.token_urlsafe(48), VERCEL='0')
+fixture_directory = tempfile.TemporaryDirectory()
+atexit.register(fixture_directory.cleanup)
+os.environ['DATABASE_URL'] = 'sqlite:///' + str(Path(fixture_directory.name) / 'library.sqlite3')
 from app import app
+from project_library import metadata
+metadata.create_all(app.extensions['project_library_engine'])
 
 csrf = secrets.token_urlsafe(32)
 fixture = {'_permanent': True, 'identity': {'id': 'browser-test-user', 'name': '測試同事'},
