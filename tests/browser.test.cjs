@@ -68,7 +68,12 @@ test('monthly report escapes model output and custom platforms, and downloads Wo
         closing: { title: attack, content: attack }
       } });
     });
-    await page.getByRole('button', { name: '產出月報' }).click();
+    await page.check('#ar-period-confirmed');
+    await page.getByRole('button', { name: '核對數據（不使用 AI 額度）' }).click();
+    await page.locator('#ar-section-review.active').waitFor();
+    await assertSafe(page, '#ar-audit-content');
+    await page.check('#ar-review-confirmed');
+    await page.getByRole('button', { name: '確認並產生 AI 月報' }).click();
     await page.locator('#ar-section-results.active').waitFor();
     assert.equal(submitted.platforms[attack], '花費 100');
     await assertSafe(page, '#ar-report-content');
@@ -128,6 +133,51 @@ test('meeting export downloads from POST and shows server errors without downloa
     await page.locator('button[onclick="exportNotesDocx()"]').click();
     await page.getByText('匯出失敗：測試匯出錯誤', { exact: true }).waitFor();
     assert.equal(downloads, 0);
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+});
+
+
+test('KPI review uses real backend, blocks bad/stale inputs, and needs no API key', async () => {
+  const { page, errors } = await pageFor('/ad-report');
+  try {
+    await page.evaluate(() => localStorage.clear());
+    await page.fill('#client-name', '指標測試');
+    await page.fill('#company-name', '測試公司');
+    await page.fill('#report-month', '2026-09');
+    await page.check('#ar-period-confirmed');
+    const panel = page.locator('#panel-meta');
+    await panel.getByRole('button', { name: '貼上數據' }).click();
+    await panel.locator('.platform-currency').selectOption('TWD');
+    await panel.locator('.platform-conversion-type').fill('purchase');
+    await panel.locator('textarea').fill('名稱,花費,曝光,點擊,成果,轉換價值\nA,100,1000,10,2,300\nB,900,3000,90,8,1700\n總計：平台,1000,4000,100,10,2000');
+    await page.getByRole('button', { name: '核對數據（不使用 AI 額度）' }).click();
+    await page.locator('#ar-section-review.active').waitFor();
+    const ctr = page.locator('#ar-audit-content tr').filter({ has: page.getByText('CTR (%)', { exact: true }) });
+    assert.equal(await ctr.locator('td').nth(1).textContent(), '2.5');
+    assert.ok((await page.locator('#ar-audit-content').textContent()).includes('排除總計行：4'));
+    assert.equal(await page.locator('#ar-generate-button').isDisabled(), false);
+    await page.screenshot({ path: 'test-results/kpi-review.png', fullPage: true });
+    await page.check('#ar-review-confirmed');
+    await page.getByRole('button', { name: '確認並產生 AI 月報' }).click();
+    await page.getByText('請在 API 設定填入 DeepSeek Key 後再產生月報', { exact: true }).waitFor();
+    await page.evaluate(() => { document.getElementById('api-settings-panel').classList.remove('show'); });
+    await page.getByRole('button', { name: '修改資料' }).click();
+    await panel.locator('textarea').fill('名稱,花費,曝光\nA,100,1000\nA,100,1000');
+    await page.getByRole('button', { name: '核對數據（不使用 AI 額度）' }).click();
+    await page.locator('#ar-section-review.active').waitFor();
+    assert.equal(await page.locator('#ar-generate-button').isDisabled(), true);
+    assert.ok((await page.locator('.audit-errors').textContent()).includes('重複匯入'));
+    await page.getByRole('button', { name: '修改資料' }).click();
+    await panel.locator('textarea').fill('花費：100\n曝光：1000');
+    await page.getByRole('button', { name: '核對數據（不使用 AI 額度）' }).click();
+    await page.locator('#ar-section-review.active').waitFor();
+    // Simulate another in-flight input update after validation.
+    await page.evaluate(() => { document.querySelector('#panel-meta textarea').value = '花費：999'; });
+    await page.check('#ar-review-confirmed');
+    await page.getByRole('button', { name: '確認並產生 AI 月報' }).click();
+    await page.locator('#ar-section-info.active').waitFor();
+    await page.getByText('資料未通過核對或已變更，請重新核對數據', { exact: true }).waitFor();
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });

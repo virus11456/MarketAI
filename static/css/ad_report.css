@@ -119,3 +119,11 @@
 
 .report-closing h2 { font-size: 1.5rem; margin-bottom: 16px; color: white; border: none; padding: 0; }
 .report-closing p { opacity: 0.85; font-size: 1rem; line-height: 1.8; }
+
+/* Data review uses the same table layout as the report. */
+#ar-audit-content table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+#ar-audit-content th, #ar-audit-content td { padding: 10px; border: 1px solid var(--border); text-align: left; }
+.audit-source { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; padding: 12px; background: var(--bg); }
+.audit-errors { color: #b42318; border-left: 3px solid #b42318; padding-left: 12px; }
+.platform-currency, .platform-conversion-type { display: block; width: 100%; padding: 8px; margin-top: 6px; }
+#ar-generate-button:disabled { opacity: .5; cursor: not-allowed; }

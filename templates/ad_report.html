@@ -10,8 +10,9 @@
 <!-- Steps -->
 <div class="steps">
   <div class="step active" id="ar-step1"><span class="step-num">1</span> 填寫資料</div>
-  <div class="step" id="ar-step3"><span class="step-num">2</span> AI 產出月報</div>
-  <div class="step" id="ar-step4"><span class="step-num">3</span> 檢視與匯出</div>
+  <div class="step" id="ar-step2"><span class="step-num">2</span> 核對數據</div>
+  <div class="step" id="ar-step3"><span class="step-num">3</span> AI 產出月報</div>
+  <div class="step" id="ar-step4"><span class="step-num">4</span> 檢視與匯出</div>
 </div>
 
 <!-- Step 1: Basic Info + Platform Data (single page) -->
@@ -58,10 +59,25 @@
       </div>
     </div>
 
+    <p>支援有表頭的 CSV／XLSX，或每行「花費：100」等欄位和值。每個平台請提供同一層級、同一月份的資料；不同幣別或成果定義請分開。</p>
     <div id="platform-panels"></div>
+    <label><input type="checkbox" id="ar-period-confirmed"> 我確認各平台資料期間均為所選報告月份</label>
 
     <div class="btn-group">
-      <button class="btn btn-primary" onclick="arStartProcessing()">產出月報 🚀</button>
+      <button class="btn btn-primary" onclick="arStartProcessing()">核對數據（不使用 AI 額度）</button>
+    </div>
+  </div>
+</div>
+
+<div class="section" id="ar-section-review">
+  <div class="card">
+    <div class="card-header"><h2>核對數據與計算依據</h2></div>
+    <p>以下數字由程式計算。請核對原始資料、期間、幣別與成果定義；「未計算」表示資料不足，並非 0。</p>
+    <div id="ar-audit-content"></div>
+    <label><input type="checkbox" id="ar-review-confirmed"> 我已核對數字與待確認事項，了解 AI 解讀仍需人工覆核</label>
+    <div class="btn-group">
+      <button class="btn btn-secondary" onclick="arGoToStep(1)">← 修改資料</button>
+      <button class="btn btn-primary" id="ar-generate-button" onclick="arGenerateReport()">確認並產生 AI 月報</button>
     </div>
   </div>
 </div>
