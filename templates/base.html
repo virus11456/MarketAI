@@ -102,7 +102,7 @@
       <input type="password" id="groq-key-input" placeholder="gsk_...">
       <button type="button" class="btn-save-key" onclick="saveGroqKey()">儲存</button>
     </div>
-    <p class="api-settings-hint">會議記錄上傳音檔時用來轉中文逐字稿（免費額度，去 console.groq.com 取得）。所有 key 只存在這台瀏覽器（localStorage），不會上傳或寫入程式碼。</p>
+    <p class="api-settings-hint">會議記錄上傳音檔時用來轉中文逐字稿（免費額度，去 console.groq.com 取得）。Key 儲存在這台瀏覽器（localStorage）。使用時，DeepSeek Key 與分析內容會經本站後端傳送給 DeepSeek；Groq Key 與音檔會直接傳送給 Groq。請勿在共用電腦保存 Key；輸入空白後儲存可清除。</p>
     <span class="api-settings-status" id="deepseek-key-status"></span>
   </div>
 
@@ -121,6 +121,7 @@
   </div>
 </div>
 
+<script src="/static/js/common.js"></script>
 <script>
 function toggleSidebar() {
   document.getElementById('sidebar').classList.toggle('collapsed');

@@ -1,6 +1,10 @@
 import os
 import json
 import uuid
+import ipaddress
+import socket
+from io import BytesIO
+from urllib.parse import urlsplit
 from datetime import datetime
 from pathlib import Path
 
@@ -19,14 +23,11 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret-key")
 
 if IS_VERCEL:
     UPLOAD_FOLDER = Path("/tmp/uploads")
-    OUTPUT_FOLDER = Path("/tmp/outputs")
 else:
     UPLOAD_FOLDER = Path(__file__).parent / "uploads"
-    OUTPUT_FOLDER = Path(__file__).parent / "outputs"
 
 
 UPLOAD_FOLDER.mkdir(exist_ok=True)
-OUTPUT_FOLDER.mkdir(exist_ok=True)
 
 ALLOWED_TEXT_EXT = {".txt", ".md", ".doc", ".docx", ".pdf", ".csv", ".xlsx", ".xls"}
 ALLOWED_AUDIO_EXT = {".mp3", ".wav", ".m4a", ".ogg", ".webm", ".mp4"}
@@ -95,9 +96,27 @@ def transcribe_audio_groq(file_path: str, api_key: str, initial_prompt: str = ""
     }
 
 
+def colab_endpoint(submitted_url: str, endpoint: str) -> str:
+    """Only administrators can choose the trusted transcription service."""
+    configured = os.getenv("COLAB_API_URL", "").strip().rstrip("/")
+    if not configured:
+        raise ValueError("Colab 備援未啟用，請使用 Groq，或請管理員設定 COLAB_API_URL。")
+    if not isinstance(submitted_url, str) or submitted_url.strip().rstrip("/") != configured:
+        raise ValueError("只允許管理員設定的 Colab API URL。")
+    parsed = urlsplit(configured)
+    if (parsed.scheme != "https" or not parsed.hostname or parsed.username
+            or parsed.password or parsed.query or parsed.fragment
+            or parsed.path not in ("", "/") or parsed.port not in (None, 443)):
+        raise ValueError("COLAB_API_URL 必須是 HTTPS 服務來源，不可包含路徑或認證資訊。")
+    addresses = socket.getaddrinfo(parsed.hostname, 443, type=socket.SOCK_STREAM)
+    if not addresses or any(not ipaddress.ip_address(item[4][0]).is_global for item in addresses):
+        raise ValueError("Colab API 必須使用公開網路位址。")
+    return configured + "/" + endpoint
+
+
 def transcribe_audio_remote(file_path: str, colab_url: str, initial_prompt: str = "") -> dict:
     """Send audio to remote Colab Whisper API for transcription."""
-    url = colab_url.rstrip("/") + "/transcribe"
+    url = colab_endpoint(colab_url, "transcribe")
 
     with open(file_path, "rb") as f:
         files = {"file": (Path(file_path).name, f)}
@@ -105,7 +124,7 @@ def transcribe_audio_remote(file_path: str, colab_url: str, initial_prompt: str 
         if initial_prompt:
             data["initial_prompt"] = initial_prompt
 
-        resp = http_requests.post(url, files=files, data=data, timeout=600)
+        resp = http_requests.post(url, files=files, data=data, timeout=600, allow_redirects=False)
 
     if resp.status_code != 200:
         error = resp.json().get("error", "Unknown error")
@@ -296,7 +315,7 @@ def organize_meeting_notes(transcript: str, api_key: str | None = None) -> str:
     return _strip_code_fence(content)
 
 
-def generate_markdown_docx(markdown_text: str, title: str = "會議記錄") -> str:
+def generate_markdown_docx(markdown_text: str, title: str = "會議記錄") -> tuple[BytesIO, str]:
     """Generate a .docx file from a Markdown string (used for meeting notes)."""
     from docx import Document
     from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -330,9 +349,10 @@ def generate_markdown_docx(markdown_text: str, title: str = "會議記錄") -> s
             doc.add_paragraph(line)
 
     filename = f"meeting_notes_{uuid.uuid4().hex[:8]}.docx"
-    output_path = OUTPUT_FOLDER / filename
-    doc.save(str(output_path))
-    return filename
+    content = BytesIO()
+    doc.save(content)
+    content.seek(0)
+    return content, filename
 
 
 @app.route("/")
@@ -376,8 +396,7 @@ def meeting_export():
     if not notes:
         return jsonify({"error": "缺少會議記錄內容"}), 400
     try:
-        filename = generate_markdown_docx(notes, title)
-        return jsonify({"filename": filename})
+        return document_response(generate_markdown_docx(notes, title))
     except Exception as e:
         return jsonify({"error": f"匯出失敗：{str(e)}"}), 500
 
@@ -385,12 +404,16 @@ def meeting_export():
 @app.route("/api/colab-health", methods=["POST"])
 def check_colab_health():
     data = request.get_json()
-    colab_url = data.get("url", "").strip().rstrip("/")
+    colab_url = (data or {}).get("url", "")
     if not colab_url:
         return jsonify({"error": "請輸入 Colab API URL"}), 400
     try:
-        resp = http_requests.get(f"{colab_url}/health", timeout=10)
+        resp = http_requests.get(colab_endpoint(colab_url, "health"), timeout=10, allow_redirects=False)
+        if resp.status_code != 200:
+            raise ValueError("Colab 健康檢查失敗（不接受重新導向）。")
         return jsonify(resp.json())
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": f"無法連線到 Colab：{str(e)}"}), 500
 
@@ -410,10 +433,9 @@ def upload_file():
 
     filename = secure_filename(f"{uuid.uuid4().hex}_{file.filename}")
     file_path = UPLOAD_FOLDER / filename
-    file.save(str(file_path))
-
-    # Extract text
+    # Always remove uploaded source data, including failed processing.
     try:
+        file.save(str(file_path))
         if ext in ALLOWED_AUDIO_EXT:
             initial_prompt = request.form.get("initial_prompt", "")
             colab_url = request.form.get("colab_url", "").strip()
@@ -451,14 +473,19 @@ def upload_file():
             return jsonify({"text": text, "filename": filename, "is_audio": False})
     except Exception as e:
         return jsonify({"error": f"檔案處理失敗：{str(e)}"}), 500
+    finally:
+        file_path.unlink(missing_ok=True)
 
 
-@app.route("/api/download/<filename>")
-def download_file(filename):
-    file_path = OUTPUT_FOLDER / secure_filename(filename)
-    if not file_path.exists():
-        return jsonify({"error": "檔案不存在"}), 404
-    return send_file(str(file_path), as_attachment=True)
+def document_response(document: tuple[BytesIO, str]):
+    content, filename = document
+    response = send_file(
+        content, as_attachment=True, download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        max_age=0,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 PLATFORM_ORDER = ["meta", "google", "line", "tiktok"]
@@ -586,7 +613,7 @@ def process_ad_report_with_ai(report_info: dict, api_key: str | None = None) -> 
     return json.loads(_strip_code_fence(content))
 
 
-def generate_ad_report_docx(result: dict) -> str:
+def generate_ad_report_docx(result: dict) -> tuple[BytesIO, str]:
     """Generate a .docx ad report file."""
     from docx import Document
     from docx.shared import Pt, Inches, RGBColor
@@ -647,9 +674,10 @@ def generate_ad_report_docx(result: dict) -> str:
     closing_content.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     filename = f"ad_report_{uuid.uuid4().hex[:8]}.docx"
-    output_path = OUTPUT_FOLDER / filename
-    doc.save(str(output_path))
-    return filename
+    content = BytesIO()
+    doc.save(content)
+    content.seek(0)
+    return content, filename
 
 
 @app.route("/api/ad-report/process", methods=["POST"])
@@ -760,7 +788,7 @@ def process_work_dispatch_with_ai(quotation_text: str, team_roles: list, project
     return json.loads(_strip_code_fence(content))
 
 
-def generate_dispatch_docx(result: dict) -> str:
+def generate_dispatch_docx(result: dict) -> tuple[BytesIO, str]:
     """Generate a .docx work dispatch document."""
     from docx import Document
     from docx.shared import Pt
@@ -822,9 +850,10 @@ def generate_dispatch_docx(result: dict) -> str:
         doc.add_paragraph(result["notes"])
 
     filename = f"work_dispatch_{uuid.uuid4().hex[:8]}.docx"
-    output_path = OUTPUT_FOLDER / filename
-    doc.save(str(output_path))
-    return filename
+    content = BytesIO()
+    doc.save(content)
+    content.seek(0)
+    return content, filename
 
 
 @app.route("/api/work-dispatch/roles", methods=["GET"])
@@ -862,8 +891,7 @@ def export_work_dispatch():
         return jsonify({"error": "缺少資料"}), 400
 
     try:
-        filename = generate_dispatch_docx(data)
-        return jsonify({"filename": filename})
+        return document_response(generate_dispatch_docx(data))
     except Exception as e:
         return jsonify({"error": f"匯出失敗：{str(e)}"}), 500
 
@@ -875,8 +903,7 @@ def export_ad_report():
         return jsonify({"error": "缺少報告資料"}), 400
 
     try:
-        filename = generate_ad_report_docx(data)
-        return jsonify({"filename": filename})
+        return document_response(generate_ad_report_docx(data))
     except Exception as e:
         return jsonify({"error": f"匯出失敗：{str(e)}"}), 500
 

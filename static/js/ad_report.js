@@ -64,7 +64,7 @@ function addPlatformPanel(platform) {
   const html = `
     <div class="platform-panel" id="panel-${platform}" data-platform="${platform}">
       <div class="panel-header">
-        <h3>${config.icon} ${config.label} 廣告數據</h3>
+        <h3>${escapeHtml(config.icon)} ${escapeHtml(config.label)} 廣告數據</h3>
         <button class="btn-icon" onclick="removePlatformPanel('${platform}')" title="移除">✕</button>
       </div>
       <div class="input-toggle" style="margin-bottom:12px;">
@@ -74,7 +74,7 @@ function addPlatformPanel(platform) {
       <div class="panel-input-upload" id="${platform}-upload">
         <div class="upload-zone mini-upload">
           <input type="file" accept=".csv,.xlsx,.xls,.txt" onchange="handlePlatformFile(this, '${platform}')">
-          <p><strong>上傳 ${config.label} 後台匯出的 CSV / Excel</strong></p>
+          <p><strong>上傳 ${escapeHtml(config.label)} 後台匯出的 CSV / Excel</strong></p>
         </div>
         <div class="file-info" id="${platform}-file-info" style="display:none;">
           <span>📎</span>
@@ -83,7 +83,7 @@ function addPlatformPanel(platform) {
       </div>
       <div class="panel-input-paste" id="${platform}-paste" style="display:none;">
         <textarea class="text-input platform-data" data-platform="${platform}"
-          placeholder="${config.placeholder}"></textarea>
+          placeholder="${escapeHtml(config.placeholder)}"></textarea>
       </div>
     </div>`;
 
@@ -112,9 +112,10 @@ function addCustomPlatform() {
   const name = prompt('請輸入平台名稱：');
   if (!name || !name.trim()) return;
 
-  const key = name.trim().toLowerCase().replace(/\s+/g, '_');
+  const key = 'custom_' + crypto.randomUUID().replace(/-/g, '');
 
-  if (activePlatforms.has(key)) {
+  if (Object.hasOwn(PLATFORM_CONFIG, name.trim().toLowerCase()) ||
+      Object.values(PLATFORM_CONFIG).some(config => config.label === name.trim())) {
     showToast('此平台已存在', 'error');
     return;
   }
@@ -125,7 +126,7 @@ function addCustomPlatform() {
   const chip = document.createElement('div');
   chip.className = 'platform-chip selected';
   chip.dataset.platform = key;
-  chip.innerHTML = `<span class="chip-icon">📈</span> ${name.trim()}`;
+  chip.innerHTML = `<span class="chip-icon">📈</span> ${escapeHtml(name.trim())}`;
   chip.onclick = function() { togglePlatform(this); };
   selector.insertBefore(chip, addBtn);
 
@@ -182,13 +183,14 @@ async function arStartProcessing() {
   }
 
   // Collect data
-  const platformsData = {};
+  const platformsData = Object.create(null);
   let hasData = false;
 
   activePlatforms.forEach(platform => {
     const textarea = document.querySelector(`#panel-${platform} .platform-data`);
     if (textarea && textarea.value.trim()) {
-      platformsData[platform] = textarea.value.trim();
+      const label = platform.startsWith('custom_') ? PLATFORM_CONFIG[platform].label : platform;
+      platformsData[label] = textarea.value.trim();
       hasData = true;
     }
   });
@@ -249,11 +251,11 @@ function renderAdReport(data) {
   const cover = data.cover || {};
   html += `
     <div class="report-cover">
-      <h1>${cover.title || '廣告月報'}</h1>
+      <h1>${escapeHtml(cover.title || '廣告月報')}</h1>
       <div class="meta-info">
-        <div>客戶：${cover.client_name || ''}</div>
-        <div>製作：${cover.company_name || ''}</div>
-        <div>報告月份：${cover.report_month || ''}</div>
+        <div>客戶：${escapeHtml(cover.client_name || '')}</div>
+        <div>製作：${escapeHtml(cover.company_name || '')}</div>
+        <div>報告月份：${escapeHtml(cover.report_month || '')}</div>
       </div>
     </div>`;
 
@@ -261,7 +263,7 @@ function renderAdReport(data) {
   (data.sections || []).forEach(section => {
     html += `
       <div class="report-section">
-        <h2>${section.title}</h2>
+        <h2>${escapeHtml(section.title)}</h2>
         <div class="section-content">${markdownToHtml(section.content || '')}</div>
       </div>`;
   });
@@ -270,8 +272,8 @@ function renderAdReport(data) {
   const closing = data.closing || {};
   html += `
     <div class="report-closing">
-      <h2>${closing.title || 'Thank You'}</h2>
-      <p>${closing.content || ''}</p>
+      <h2>${escapeHtml(closing.title || 'Thank You')}</h2>
+      <p>${escapeHtml(closing.content || '')}</p>
     </div>`;
 
   container.innerHTML = html;
@@ -281,7 +283,7 @@ function renderAdReport(data) {
 function markdownToHtml(text) {
   if (!text) return '';
 
-  let html = text
+  let html = escapeHtml(text)
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.*?)\*/g, '<em>$1</em>')
     .replace(/^#### (.*$)/gm, '<h5>$1</h5>')
@@ -355,13 +357,7 @@ async function arExportDocx() {
       body: JSON.stringify(arReportResult)
     });
 
-    const data = await res.json();
-    if (data.error) {
-      showToast(data.error, 'error');
-      return;
-    }
-
-    window.location.href = `/api/download/${data.filename}`;
+    await downloadDocxResponse(res, '廣告月報.docx');
     showToast('DOCX 已開始下載', 'success');
   } catch (err) {
     showToast('匯出失敗：' + err.message, 'error');
